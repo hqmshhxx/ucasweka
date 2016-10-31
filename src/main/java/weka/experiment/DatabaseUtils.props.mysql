@@ -9,10 +9,10 @@
 # version: $Revision: 11885 $
 
 # JDBC driver (comma-separated list)
-jdbcDriver=org.gjt.mm.mysql.Driver
+jdbcDriver=com.mysql.jdbc.Driver
 
 # database URL
-jdbcURL=jdbc:mysql://server_name:3306/database_name
+jdbcURL=jdbc:mysql://localhost:3306/aluminum?useSSL=false&characterEncoding=utf8
 
 # specific data types
 # string, getString() = 0;    --> nominal
