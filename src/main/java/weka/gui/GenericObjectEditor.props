@@ -270,6 +270,7 @@ weka.clusterers.Clusterer=\
  weka.clusterers.sIB,\
  weka.clusterers.SimpleKMeans,\
  weka.clusterers.FuzzyCMeans,\
+  weka.clusterers.FastFCM,\
  weka.clusterers.BiClustering,\
  weka.clusterers.XMeans
  

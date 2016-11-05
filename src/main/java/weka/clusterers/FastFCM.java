@@ -285,15 +285,10 @@ public class FastFCM extends RandomizableClusterer implements
 		m_NumClusters = m_ClusterCentroids.numInstances();
 		// removing reference
 		initInstances = null;
-		/*
-		 * for (int i = 0; i < m_NumClusters; i++) { Instance cent = new
-		 * DenseInstance(instances.instance(i)); m_ClusterCentroids.add(cent); }
-		 */
+		
 		m_squaredErrors = new double[m_NumClusters];
-		m_ClusterNominalCounts = new double[m_NumClusters][instances
-				.numAttributes()][0];
-		m_ClusterMissingCounts = new double[m_NumClusters][instances
-				.numAttributes()];
+		m_ClusterNominalCounts = new double[m_NumClusters][instances.numAttributes()][0];
+		m_ClusterMissingCounts = new double[m_NumClusters][instances.numAttributes()];
 		startExecutorPool();
 		initMemberShip(instances);
 		double difference = 0.0d;
@@ -304,39 +299,44 @@ public class FastFCM extends RandomizableClusterer implements
 		} while (difference > m_EndValue && ++m_Iterations < m_MaxIterations);
 		// 更新m_Assignments;
 		updateClustersInfo(instances);
-
+		m_executorPool.shutdown();
 		// save memory!
 		m_DistanceFunction.clean();
 
 	}
 
-	public void initMemberShip(Instances instances) {
+	public synchronized void initMemberShip(Instances instances) {
 		/* 初始化membership也就是uij */
 		memberShip = new Matrix(instances.numInstances(), m_NumClusters);
 		int numPerTask = instances.numInstances() / m_executionSlots;
+		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
 		for (int i = 0; i < m_executionSlots; i++) {
 			int start = i * numPerTask;
 			int end = start + numPerTask;
 			if (i == m_NumClusters - 1) {
 				end = instances.numInstances();
 			}
-			m_executorPool
-					.execute(new InitMembershipTask(instances, start, end));
+			results.add(m_executorPool.submit(new InitMembershipTask(instances, start, end)));
+		}
+		try{
+			for(Future<Boolean> task : results){
+				task.get();
+			}
+		}catch(Exception e){
+			e.printStackTrace();
 		}
 	}
 
-	private class InitMembershipTask implements Runnable {
-		protected Instances ins;
+	private class InitMembershipTask implements Callable<Boolean> {
 		protected int start;
 		protected int end;
 
 		public InitMembershipTask(Instances ins, int start, int end) {
-			this.ins = ins;
 			this.start = start;
 			this.end = end;
 		}
 
-		public void run() {
+		public Boolean call() {
 			Random rand = new Random();
 			rand.setSeed(m_Seed);
 			for (int i = start; i < end; i++) {
@@ -351,14 +351,14 @@ public class FastFCM extends RandomizableClusterer implements
 					memberShip.set(i, j, value);
 				}
 			}
+			return true;
 		}
 	}
 
-	private void updateCentroid(Instances instances) {
+	private synchronized void updateCentroid(Instances instances) {
 		List<Future<Instance>> results = new ArrayList<Future<Instance>>();
 		for (int k = 0; k < m_NumClusters; k++) {
-			Future<Instance> task = m_executorPool
-					.submit(new ComputeCentroidTask(instances, k));
+			Future<Instance> task = m_executorPool.submit(new ComputeCentroidTask(instances, k));
 			results.add(task);
 		}
 		m_ClusterCentroids.clear();
@@ -402,14 +402,21 @@ public class FastFCM extends RandomizableClusterer implements
 		}
 	}
 
-	private void updateMemberShip(Instances instances) {
-
+	private synchronized void updateMemberShip(Instances instances) {
+		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
 		for (int j = 0; j < m_NumClusters; j++) {
-			m_executorPool.execute(new ComputeMembershipTask(j, instances));
+			results.add(m_executorPool.submit(new ComputeMembershipTask(j, instances)));
+		}
+		try{
+			for(Future<Boolean> task : results){
+				task.get();
+			}
+		}catch(Exception e){
+			e.printStackTrace();
 		}
 	}
 
-	private class ComputeMembershipTask implements Runnable {
+	private class ComputeMembershipTask implements Callable<Boolean> {
 		protected int centroidIndex;
 		protected Instances insts;
 
@@ -418,7 +425,7 @@ public class FastFCM extends RandomizableClusterer implements
 			insts = ins;
 		}
 
-		public void run() {
+		public Boolean call() {
 			for (int i = 0; i < insts.numInstances(); i++) {
 				double bottom = 0;
 				double top = m_DistanceFunction.distance(insts.instance(i),
@@ -431,10 +438,11 @@ public class FastFCM extends RandomizableClusterer implements
 				}
 				memberShip.set(i, centroidIndex, 1.0d / sum);
 			}
+			return true;
 		}
 	}
 
-	private double calculateObjectiveFunction(Instances instances) {
+	private synchronized double  calculateObjectiveFunction(Instances instances) {
 		double sum = 0;
 		int numPerTask = instances.numInstances() / m_executionSlots;
 		List<Future<Double>> results = new ArrayList<Future<Double>>();
@@ -444,8 +452,7 @@ public class FastFCM extends RandomizableClusterer implements
 			if (i == m_NumClusters - 1) {
 				end = instances.numInstances();
 			}
-			Future<Double> task = m_executorPool
-					.submit(new ComputeObjectvieFunction(instances, start, end));
+			Future<Double> task = m_executorPool.submit(new ComputeObjectvieFunction(instances, start, end));
 			results.add(task);
 		}
 		try {

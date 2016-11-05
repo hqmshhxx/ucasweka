@@ -763,12 +763,8 @@ public class SimpleKMeans extends RandomizableClusterer implements
 					|| instances.numInstances() < 2 * m_executionSlots) {
 				for (i = 0; i < instances.numInstances(); i++) {
 					Instance toCluster = instances.instance(i);
-					int newC = clusterProcessedInstance(
-							toCluster,
-							false,
-							true,
-							m_speedUpDistanceCompWithCanopies ? m_dataPointCanopyAssignments
-									.get(i) : null);
+					int newC = clusterProcessedInstance(toCluster,false,true,
+							m_speedUpDistanceCompWithCanopies ? m_dataPointCanopyAssignments.get(i) : null);
 					if (newC != clusterAssignments[i]) {
 						converged = false;
 					}
