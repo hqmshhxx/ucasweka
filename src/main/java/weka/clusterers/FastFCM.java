@@ -6,12 +6,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 import weka.classifiers.rules.DecisionTableHashKey;
+import weka.clusterers.NumberOfClustersRequestable;
+import weka.clusterers.RandomizableClusterer;
 import weka.core.Attribute;
 import weka.core.Capabilities;
 import weka.core.Capabilities.Capability;
@@ -61,6 +62,8 @@ public class FastFCM extends RandomizableClusterer implements
 	 * holds the cluster centroids. 聚类中心
 	 */
 	protected Instances m_ClusterCentroids;
+	
+	protected Instances[] mClusters;
 
 	/**
 	 * Preserve order of instances.
@@ -228,8 +231,7 @@ public class FastFCM extends RandomizableClusterer implements
 		if (m_displayStdDevs) {
 			m_FullStdDevs = instances.variances();
 		}
-		m_FullMeansOrMediansOrModes = calculateMeansOrMediansOrModes(0,
-				instances, true);
+		m_FullMeansOrMediansOrModes = calculateMeansOrMediansOrModes(0,instances, true);
 
 		m_FullMissingCounts = m_ClusterMissingCounts[0];
 		m_FullNominalCounts = m_ClusterNominalCounts[0];
@@ -492,9 +494,8 @@ public class FastFCM extends RandomizableClusterer implements
 	}
 
 	private void updateClustersInfo(Instances instances) {
-		Instances[] tempI = new Instances[m_NumClusters];
 		for (int i = 0; i < m_NumClusters; i++) {
-			tempI[i] = new Instances(instances, 0);
+			mClusters[i] = new Instances(instances, 0);
 		}
 		if (m_displayStdDevs) {
 			m_ClusterStdDevs = new Instances(instances, m_NumClusters);
@@ -511,7 +512,7 @@ public class FastFCM extends RandomizableClusterer implements
 				}
 			}
 			m_Assignments[i] = index;
-			tempI[index].add(instances.get(i));
+			mClusters[index].add(instances.get(i));
 			m_ClusterSizes[index] += 1;
 
 			dist = m_DistanceFunction.distance(instances.instance(i),
@@ -522,9 +523,9 @@ public class FastFCM extends RandomizableClusterer implements
 
 		// update m_ClusterStdDevs m_ClusterNominalCounts m_ClusterMissingCounts
 		for (int i = 0; i < m_NumClusters; i++) {
-			calculateMeansOrMediansOrModes(i, tempI[i], true);
+			calculateMeansOrMediansOrModes(i, mClusters[i], true);
 			if (m_displayStdDevs) {
-				double[] vals2 = tempI[i].variances();
+				double[] vals2 = mClusters[i].variances();
 				for (int j = 0; j < instances.numAttributes(); j++) {
 					if (instances.attribute(j).isNumeric()) {
 						vals2[j] = Math.sqrt(vals2[j]);
@@ -849,6 +850,9 @@ public class FastFCM extends RandomizableClusterer implements
 		return m_Assignments;
 	}
 
+	public Instances[] getClusters(){
+		return mClusters;
+	}
 	@Override
 	public void setOptions(String[] options) throws Exception {
 		// TODO Auto-generated method stub
