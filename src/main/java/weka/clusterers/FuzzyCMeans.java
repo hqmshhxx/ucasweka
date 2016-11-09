@@ -509,7 +509,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 
 			dist = m_DistanceFunction.distance(instances.instance(i),
 					m_ClusterCentroids.instance(index));
-			m_squaredErrors[index] = dist * dist
+			m_squaredErrors[index] += dist * dist
 					* instances.instance(i).weight();
 		}
 

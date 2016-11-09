@@ -126,7 +126,7 @@ public class FastFCM extends RandomizableClusterer implements
 	/*
 	 * objective function result 目标函数值
 	 */
-	private double m_OFR = 100;
+	private double m_OFR = 500;
 
 	/**
 	 * a small value used to verify if clustering has converged. 目标函数值改变量范围
@@ -284,7 +284,7 @@ public class FastFCM extends RandomizableClusterer implements
 			updateCentroid(instances);
 			updateMemberShip(instances);
 			difference = calculateObjectiveFunction(instances);
-		} while (difference > m_EndValue && ++m_Iterations < m_MaxIterations);
+		} while (difference > m_OFR && ++m_Iterations < m_MaxIterations);
 		// 更新m_Assignments;
 		updateClustersInfo(instances);
 		m_executorPool.shutdown();
@@ -499,7 +499,7 @@ public class FastFCM extends RandomizableClusterer implements
 			mClusters[index].add(instances.get(i));
 			m_ClusterSizes[index] += 1;
 			dist = m_DistanceFunction.distance(instances.instance(i),m_ClusterCentroids.instance(index));
-			m_squaredErrors[index] = dist * dist* instances.instance(i).weight();
+			m_squaredErrors[index] += dist * dist * instances.instance(i).weight();
 		}
 
 		// update m_ClusterStdDevs m_ClusterNominalCounts m_ClusterMissingCounts
@@ -799,6 +799,12 @@ public class FastFCM extends RandomizableClusterer implements
 	public Instances[] getClusters() {
 		return mClusters;
 	}
+	public void setObjFun(double mEndVal){
+		m_OFR  = mEndVal;
+	}
+	public double getObjFun(){
+		return m_OFR  ;
+	}
 
 	@Override
 	public void setOptions(String[] options) throws Exception {
@@ -812,6 +818,10 @@ public class FastFCM extends RandomizableClusterer implements
 		optionString = Utils.getOption("I", options);
 		if (optionString.length() != 0) {
 			setMaxIterations(Integer.parseInt(optionString));
+		}
+		optionString = Utils.getOption("ov", options);
+		if (optionString.length() != 0) {
+			setObjFun(Double.parseDouble(optionString));
 		}
 		m_PreserveOrder = Utils.getFlag("O", options);
 		super.setOptions(options);
@@ -833,12 +843,10 @@ public class FastFCM extends RandomizableClusterer implements
 		result.add("-N");
 		result.add("" + getNumClusters());
 
-		result.add("-A");
-		result.add((m_DistanceFunction.getClass().getName() + " " + Utils
-				.joinOptions(m_DistanceFunction.getOptions())).trim());
-
 		result.add("-I");
 		result.add("" + getMaxIterations());
+		result.add("-OV");
+		result.add("" + getObjFun());
 
 		if (m_PreserveOrder) {
 			result.add("-O");
