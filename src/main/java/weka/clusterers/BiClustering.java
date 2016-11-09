@@ -9,6 +9,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import weka.core.Attribute;
+import weka.core.DenseInstance;
+import weka.core.EuclideanDistance;
+import weka.core.Instance;
 import weka.core.Instances;
 import weka.core.Utils;
 import weka.filters.Filter;
@@ -38,6 +42,11 @@ public class BiClustering {
 	protected boolean mDontReplaceMissing = false;
 	
 	protected Future<Double> mFutureMeans;
+	
+	private Instances mLastIns;
+	private Instance mCentroid;
+	private double[] mSquaredErrors;
+	
 //	private Future<Double> mFutureValue;
 	private double mValue = 0;
 	/** Number of threads to run */
@@ -65,6 +74,13 @@ public class BiClustering {
 		}
 		startExecutorPool();
 		multipleNodeDeletion(instances);
+		
+		double[] centroidVal = new double[mLastIns.numAttributes()];
+		for(int i=0; i < mLastIns.numAttributes(); i++){
+			 centroidVal[i] = mLastIns.meanOrMode(i);
+		}
+		mCentroid = new DenseInstance(1.0,centroidVal);
+		mSquaredErrors = mLastIns.variances();
 		mExecutorPool.shutdown();
 		
 		
@@ -122,6 +138,7 @@ public class BiClustering {
 			rows = instances.numInstances();
 			System.out.println("==============================");
 		}
+		mLastIns = instances;
 		instances = null;
 	}
 	protected Instances multiDelRows(Instances instances){
@@ -477,7 +494,18 @@ public class BiClustering {
 		values[1] += scoreJ * 1.0 / colNum;
 		return values;
 	}
-	
+	public double getSquaredError() {
+		return Utils.sum(mSquaredErrors);
+	}
+	public double getStandardDevs(){
+		return Math.sqrt(getSquaredError());
+	}
+	public Instance getCentroid() {
+		return mCentroid;
+	}
+	public Instances getCluster() {
+		return mLastIns;
+	}
 	public int getMaxIterations() {
 		return maxIterations;
 	}
@@ -493,16 +521,100 @@ public class BiClustering {
 	public void setEndValue(double endValue) {
 		this.endValue = endValue;
 	}
+	private String pad(String source, String padChar, int length,
+			boolean leftPad) {
+		StringBuffer temp = new StringBuffer();
 
+		if (leftPad) {
+			for (int i = 0; i < length; i++) {
+				temp.append(padChar);
+			}
+			temp.append(source);
+		} else {
+			temp.append(source);
+			for (int i = 0; i < length; i++) {
+				temp.append(padChar);
+			}
+		}
+		return temp.toString();
+	}
 	@Override
 	public String toString() {
-		// TODO Auto-generated method stub
-		StringBuilder temp = new StringBuilder();
-		temp.append("\nBiClustering\n======\n");
+		if (mCentroid == null) {
+			return "No clusterer built yet!";
+		}
+		int maxWidth = 0;
+		int maxAttWidth = 0;
+		boolean containsNumeric = false;
+		
+		for (int j = 0; j < mCentroid.numAttributes(); j++) {
+			if (mCentroid.attribute(j).name().length() > maxAttWidth) {
+				maxAttWidth = mCentroid.attribute(j).name().length();
+			}
+			if (mCentroid.attribute(j).isNumeric()) {
+				containsNumeric = true;
+				double width = Math.log(Math.abs(mCentroid.value(j))) / Math.log(10.0);
+				if (width < 0) {
+					width = 1;
+				}
+				width += 6.0;
+				if ((int) width > maxWidth) {
+					maxWidth = (int) width;
+				}
+			}
+		}
+		for (int i = 0; i < mCentroid.numAttributes(); i++) {
+			if (mCentroid.attribute(i).isNominal()) {
+				Attribute a = mCentroid.attribute(i);
+				String val = a.value((int) mCentroid.value(i));
+				if (val.length() > maxWidth) {
+					maxWidth = val.length();
+				}
+				for (int j = 0; j < a.numValues(); j++) {
+					String valu = a.value(j) + " ";
+					if (valu.length() > maxAttWidth) {
+						maxAttWidth = valu.length();
+					}
+				}
+			}
+		}
+		String plusMinus = "+/-";
+		maxAttWidth += 2;
+		if (containsNumeric) {
+			maxWidth += plusMinus.length();
+		}
+		if (maxAttWidth < "Attribute".length() + 2) {
+			maxAttWidth = "Attribute".length() + 2;
+		}
+		StringBuffer temp = new StringBuffer();
+		temp.append("\nFastFCM\n======\n");
 		temp.append("\nNumber of iterations: " + mIterations);
-		temp.append("\nthe value is: "+mValue);
-		temp.append("\n\n");
+		temp.append("\n");
+		temp.append("Sum of within cluster distances: "+ Utils.sum(mSquaredErrors));
 
+		temp.append("\n\nFinal cluster centroids:\n");
+		temp.append(pad("Cluster#", " ", (maxAttWidth + (maxWidth * 2 + 2))
+				- "Cluster#".length(), true));
+
+		temp.append("\n");
+		temp.append(pad("Attribute", " ", maxAttWidth - "Attribute".length(),false));
+
+		temp.append(pad("Full Data", " ", maxWidth + 1 - "Full Data".length(),true));
+		// cluster numbers
+		String clustNum = "" + 0;
+		temp.append(pad("", " ", maxWidth + 1 - clustNum.length(),true));
+		temp.append("\n");
+
+		temp.append(pad("", "=",maxAttWidth+ (maxWidth * 2+ 3), true));
+		temp.append("\n");
+		for (int i = 0; i < mCentroid.numAttributes(); i++) {
+			String attName = mCentroid.attribute(i).name();
+			temp.append(attName);
+			for (int j = 0; j < maxAttWidth - attName.length(); j++) {
+				temp.append(" ");
+			}
+		}
+		temp.append("\n\n");
 		return temp.toString();
 	}
 
