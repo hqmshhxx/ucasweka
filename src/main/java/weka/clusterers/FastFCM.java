@@ -241,7 +241,7 @@ public class FastFCM extends RandomizableClusterer implements
 				}
 			}
 		}
-
+		mClusters = new Instances[m_NumClusters];
 		m_ClusterCentroids = new Instances(instances, m_NumClusters);
 		m_DistanceFunction.setInstances(instances);
 		Random RandomO = new Random(getSeed());
