@@ -42,9 +42,10 @@ public class BCFCM extends RandomizableClusterer implements NumberOfClustersRequ
 	/** For parallel execution mode */
 	protected transient ExecutorService mExecutorPool;
 	
-	public BCFCM (FastFCM fcm){
-		this.fcm = fcm;
+	public BCFCM (){
+		fcm = new FastFCM();
 	}
+	
 	protected void startExecutorPool() {
 		if (mExecutorPool != null) {
 			mExecutorPool.shutdownNow();
@@ -60,7 +61,7 @@ public class BCFCM extends RandomizableClusterer implements NumberOfClustersRequ
 		mFcmClusters = fcm.getClusters();
 		mFcmCentroids = fcm.getClusterCentroids();
 		mFcmSquaredErrors = fcm.m_squaredErrors;
-		for(int i = 0; i < mNumCluster; i++){
+		for(int i = 0; i < i; i++){
 			results.add(mExecutorPool.submit(new BiCTask(mFcmClusters[i])));
 		}
 		
@@ -277,8 +278,9 @@ public class BCFCM extends RandomizableClusterer implements NumberOfClustersRequ
 
 	
 	public static void main(String[] args){
-		FastFCM fcm = new FastFCM();
 		
-		runClusterer(new BCFCM(fcm), args);
+		runClusterer(new BCFCM(), args);
+//		BCFCM bcm = new BCFCM();
+		
 	}
 }

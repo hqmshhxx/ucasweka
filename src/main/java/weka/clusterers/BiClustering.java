@@ -11,12 +11,10 @@ import java.util.concurrent.Future;
 
 import weka.core.Attribute;
 import weka.core.DenseInstance;
-import weka.core.EuclideanDistance;
 import weka.core.Instance;
 import weka.core.Instances;
 import weka.core.Utils;
 import weka.filters.Filter;
-import weka.filters.unsupervised.attribute.Remove;
 import weka.filters.unsupervised.attribute.ReplaceMissingValues;
 
 public class BiClustering {
@@ -24,9 +22,9 @@ public class BiClustering {
 	/** 属性的最少个数 */
 	private int minAttNum= 8;
 	/** instance的最少个数 */
-	private int minInsNum = 100;
+	private int minInsNum = 2000;
 	/** 目标函数值改变量范围 */
-	private double endValue = 1e-6;
+	private double endValue = 1e-3;
 	private double alpha = 2;
 	
 	/**
@@ -42,6 +40,7 @@ public class BiClustering {
 	protected boolean mDontReplaceMissing = false;
 	
 	protected Future<Double> mFutureMeans;
+	protected double mMeans;
 	
 	private Instances mLastIns;
 	private Instance mCentroid;
@@ -89,15 +88,21 @@ public class BiClustering {
 		// rows and cols 是多点删除前时instans的行数和列数
 		int rows = instances.numInstances();
 		int cols = instances.numAttributes();
-		mValue = calculateH(instances);// 第一次运行multiDelRows需要用到mValue
+//		mFutureMeans = mExecutorPool.submit(new ComputeMeans(instances));
+//		mValue = calculateH(instances);// 第一次运行multiDelRows需要用到mValue
+		mMeans = calculateMeans(instances);
+		mValue = calculateH(instances);
 		while (true) {
 			mIterations++;
 			System.out.println("mIterations = "+mIterations);
 			//delete rows
-			mFutureMeans = mExecutorPool.submit(new ComputeMeans(instances));
+//			mFutureMeans = mExecutorPool.submit(new ComputeMeans(instances));
+			
 			instances = multiDelRows(instances);
-			System.out.println("mutiple deletion rows\nmValue = "+ mValue+" rows = "+instances.numInstances()+" cols = "+instances.numAttributes());
+			mMeans = calculateMeans(instances);
 			mValue = calculateH(instances);//删除行后需要从新计算mValue
+			System.out.println("mutiple deletion rows\nmValue = "+ mValue+" rows = "+instances.numInstances()+" cols = "+instances.numAttributes());
+
 			if (mValue <= endValue) {
 				System.out.println("找到了最小值");
 				break;
@@ -106,10 +111,12 @@ public class BiClustering {
 				break;
 			}
 			//delete cols
-			mFutureMeans = mExecutorPool.submit(new ComputeMeans(instances));
+//			mFutureMeans = mExecutorPool.submit(new ComputeMeans(instances));
 			instances = multiDelCols(instances);
+			mMeans = calculateMeans(instances);
 			mValue = calculateH(instances);//删除列后需要重新计算mValue
 			System.out.println("mutiple deletion cols\nmValue = "+ mValue+" rows = "+instances.numInstances()+" cols = "+instances.numAttributes());
+			
 			if (mValue <= endValue) {
 				System.out.println("找到了最小值");
 				break;
@@ -120,20 +127,23 @@ public class BiClustering {
 			// 单点删除
 			if (rows == instances.numInstances() && cols == instances.numAttributes()) {
 				instances = singleNodeDeletion(instances);
+				mMeans = calculateMeans(instances);
+				mValue = calculateH(instances);//单点删除后需要重新计算mValue，多行删除时，需要次mValue
+				System.out.println("single deletion\nmValue = "+ mValue+" rows = "+instances.numInstances()+" cols = "+instances.numAttributes());
+				if (mValue <= endValue) {
+					System.out.println("找到了最小值");
+					break;
+				}
+				if(cols < minAttNum || rows < minInsNum){
+					break;
+				}
 			}
-			mValue = calculateH(instances);//单点删除后需要重新计算mValue，多行删除时，需要次mValue
-			System.out.println("single deletion\nmValue = "+ mValue+" rows = "+instances.numInstances()+" cols = "+instances.numAttributes());
-			if (mValue <= endValue) {
-				System.out.println("找到了最小值");
-				break;
-			}
+		
 			if (mIterations == maxIterations) {
 				System.out.println("到达最大循环数");
 				break;
 			}
-			if(cols < minAttNum || rows < minInsNum){
-				break;
-			}
+			
 			cols = instances.numAttributes();
 			rows = instances.numInstances();
 			System.out.println("==============================");
@@ -150,7 +160,7 @@ public class BiClustering {
 			if (i == mExecutionSlots - 1) {
 				end = instances.numInstances();
 			}
-			Future<double[]> futureMR = mExecutorPool.submit(new MDRowsTask(instances, start, end));
+			Future<double[]> futureMR = mExecutorPool.submit(new MDRowsTask(instances, start, end, mMeans));
 			results.add(futureMR);
 		}
 		try{
@@ -158,7 +168,7 @@ public class BiClustering {
 				double[] scores = task.get();
 				for(int i=0; i<scores.length; i++){
 					if (scores[i] > alpha * mValue) {
-						instances.instance(i).setValue(0, null);
+						instances.instance(i).setValue(0, Double.NaN);
 					}
 				}
 			}
@@ -172,18 +182,22 @@ public class BiClustering {
 		private Instances instances;
 		private int start;
 		private int end;
-		private double[] scores= new double[end - start];
+		private double mean;
+		private double[] scores;
 		
-		public MDRowsTask(Instances instances, int start, int end){
+		public MDRowsTask(Instances instances, int start, int end, double mean){
 			this.instances = instances;
 			this.start = start;
 			this.end = end;
+			this.mean = mean;
+			scores= new double[end - start];
 		}
 		@Override
 		public double[] call() throws Exception {
 			for (int i = start; i < end; i++) {
-				Future<Double> iJ = mExecutorPool.submit(new ComputeiJ(instances, i));
-				scores[i-start] = calculateInstances(instances, i,iJ);
+				double iJ = calculate_iJ(instances,i);
+//				Future<Double> iJ = mExecutorPool.submit(new ComputeiJ(instances, i));
+				scores[i-start] = calculateInstances(instances, i,iJ,mean);
 			}
 			return scores;
 		}
@@ -193,7 +207,7 @@ public class BiClustering {
 		int numPerTask = instances.numAttributes() / mExecutionSlots;
 		List<Future<double[]>> results = new ArrayList<>();
 		if(numPerTask == 0){
-			results.add(mExecutorPool.submit(new MDColsTask(instances, 0, instances.numAttributes())));
+			results.add(mExecutorPool.submit(new MDColsTask(instances, 0, instances.numAttributes(), mMeans)));
 		}else{
 			for (int i = 0; i < mExecutionSlots; i++) {
 				int start = i * numPerTask;
@@ -201,18 +215,24 @@ public class BiClustering {
 				if (i == mExecutionSlots - 1) {
 					end = instances.numAttributes();
 				}
-				Future<double[]> futureMR = mExecutorPool.submit(new MDColsTask(instances, start, end));
+				Future<double[]> futureMR = mExecutorPool.submit(new MDColsTask(instances, start, end, mMeans));
 				results.add(futureMR);
 			}
 		}
-		Remove rm = new Remove();
 		try{
+			double[] attVals = new double[instances.numAttributes()];
+			int j=0;
 			for(Future<double[]> task : results){
 				double[] scores = task.get();
 				for(int i=0; i<scores.length; i++){
-					if (scores[i] > alpha * mValue) {
-						rm.setAttributeIndices(i+"");
-					}
+					attVals[j++] = scores[i];
+				}	
+			}
+			int delCount = 0;
+			for(j = 0;j < attVals.length; j++){
+				if (attVals[j] > alpha * mValue) {
+					instances.deleteAttributeAt(j - delCount);
+					delCount++;
 				}
 			}
 		}catch(InterruptedException ie){
@@ -220,40 +240,36 @@ public class BiClustering {
 		}catch(ExecutionException ee){
 			ee.printStackTrace();
 		}
-		
-		try {
-			rm.setInputFormat(instances);
-			instances = Filter.useFilter(instances, rm);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		
 		return instances;
 	}
 	private class MDColsTask implements Callable<double[]>{
 		private Instances instances;
 		private int start;
 		private int end;
-		private double[] scores= new double[end - start];
+		private double mean;
+		private double[] scores;
 		
-		public MDColsTask(Instances instances, int start, int end){
+		public MDColsTask(Instances instances, int start, int end, double mean){
 			this.instances = instances;
 			this.start = start;
 			this.end = end;
+			this.mean = mean;
+			scores= new double[end - start];
 		}
 		@Override
 		public double[] call() throws Exception {
 			for (int i = start; i < end; i++) {
-				Future<Double> Ij = mExecutorPool.submit(new ComputeIj(instances, i));
-				scores[i-start] = calculateAttributes(instances, i,Ij);
+				double Ij = calculate_Ij(instances,i);
+//				Future<Double> Ij = mExecutorPool.submit(new ComputeIj(instances, i));
+				scores[i-start] = calculateAttributes(instances, i,Ij,mean);
 			}
 			return scores;
 		}
 		
 	}
 	protected Instances singleNodeDeletion(Instances instances) {
-		Future<double[]> rowMax = mExecutorPool.submit(new MaxRowScores(instances));
-		Future<double[]> colMax = mExecutorPool.submit(new MaxColScores(instances));
+		Future<double[]> rowMax = mExecutorPool.submit(new MaxRowScores(instances, mMeans));
+		Future<double[]> colMax = mExecutorPool.submit(new MaxColScores(instances, mMeans));
 		try{
 			double[] rowVal =  rowMax.get();
 			double[] colVal = colMax.get();
@@ -272,8 +288,10 @@ public class BiClustering {
 	
 	private class MaxRowScores implements Callable<double[]>{
 		private Instances instances;
-		public MaxRowScores(Instances ins){
+		private double mean;
+		public MaxRowScores(Instances ins,double mean){
 			instances = ins;
+			this.mean = mean;
 		}
 		@Override
 		public double[] call() throws Exception {
@@ -285,7 +303,7 @@ public class BiClustering {
 				if (i == mExecutionSlots - 1) {
 					end = instances.numInstances();
 				}
-				Future<double[]> futureMR = mExecutorPool.submit(new MDRowsTask(instances, start, end));
+				Future<double[]> futureMR = mExecutorPool.submit(new MDRowsTask(instances, start, end,mean));
 				results.add(futureMR);
 			}
 			double[] maxRow = new double[2];
@@ -311,15 +329,17 @@ public class BiClustering {
 	
 	private class MaxColScores implements Callable<double[]>{
 		private Instances instances;
-		public MaxColScores(Instances ins){
+		private double mean;
+		public MaxColScores(Instances ins, double mean){
 			instances = ins;
+			this.mean = mean;
 		}
 		@Override
 		public double[] call() throws Exception {
 			int numPerTask = instances.numAttributes() / mExecutionSlots;
 			List<Future<double[]>> results = new ArrayList<>();
 			if(numPerTask == 0){
-				results.add(mExecutorPool.submit(new MDColsTask(instances, 0, instances.numAttributes())));
+				results.add(mExecutorPool.submit(new MDColsTask(instances, 0, instances.numAttributes(), mean)));
 			}else{
 				for (int i = 0; i < mExecutionSlots; i++) {
 					int start = i * numPerTask;
@@ -327,7 +347,7 @@ public class BiClustering {
 					if (i == mExecutionSlots - 1) {
 						end = instances.numAttributes();
 					}
-					Future<double[]> futureMR = mExecutorPool.submit(new MDColsTask(instances, start, end));
+					Future<double[]> futureMR = mExecutorPool.submit(new MDColsTask(instances, start, end, mean));
 					results.add(futureMR);
 				}
 			}
@@ -353,12 +373,13 @@ public class BiClustering {
 		}
 	}
 
-	protected double calculateInstances(Instances instances, int row,Future<Double> iJ) {
+	protected double calculateInstances(Instances instances, int row, double iJ, double mean) {
 		double score = 0;
 		try{
 			for (int j = 0; j < instances.numAttributes(); j++) {
-				Future<Double> Ij= mExecutorPool.submit(new ComputeIj(instances,j));
-				score += Math.pow(instances.instance(row).value(j) - iJ.get() - Ij.get() + mFutureMeans.get(), 2);
+				double Ij = calculate_Ij(instances,j);
+//				Future<Double> Ij= mExecutorPool.submit(new ComputeIj(instances,j));
+				score += Math.pow(instances.instance(row).value(j) - iJ - Ij + mean, 2);
 			}
 		}catch(Exception e){
 			e.printStackTrace();
@@ -367,12 +388,13 @@ public class BiClustering {
 		return score;
 	}
 
-	protected double calculateAttributes(Instances instances, int col, Future<Double> Ij) {
+	protected double calculateAttributes(Instances instances, int col, double Ij, double mean) {
 		double score = 0;
 		try{
 			for (int i = 0; i < instances.numInstances(); i++) {
-				Future<Double>  iJ = mExecutorPool.submit(new ComputeiJ(instances,i));
-				score += Math.pow(instances.instance(i).value(col) - iJ.get() - Ij.get() + mFutureMeans.get(), 2);
+				double iJ = calculate_iJ(instances,i);
+//				Future<Double>  iJ = mExecutorPool.submit(new ComputeiJ(instances,i));
+				score += Math.pow(instances.instance(i).value(col) - iJ - Ij + mean, 2);
 			}
 		}catch(Exception e){
 			e.printStackTrace();
@@ -380,7 +402,14 @@ public class BiClustering {
 		score /= instances.numInstances();
 		return score;
 	}
-
+	public double calculate_iJ(Instances instances,int row){
+		double iJ=0.0;
+		for (int j = 0; j < instances.numAttributes(); j++) {
+			iJ += instances.instance(row).value(j);
+		}
+		iJ /= instances.numAttributes();
+		return iJ;
+	}
 	private class ComputeiJ implements Callable<Double>{
 		private Instances instances;
 		private int row;
@@ -400,7 +429,14 @@ public class BiClustering {
 		}
 	}
 
-	
+	public double calculate_Ij(Instances instances, int col){
+		double Ij=0.0;
+		for (int i = 0; i < instances.numInstances(); i++) {
+			Ij += instances.instance(i).value(col);
+		}
+		Ij /= instances.numInstances();
+		return Ij;
+	}
 	private class ComputeIj implements Callable<Double>{
 		private Instances instances;
 		private int col;
@@ -425,11 +461,13 @@ public class BiClustering {
 			for (int i = 0; i < instances.numInstances(); i++) {
 				for (int j = 0; j < instances.numAttributes(); j++) {
 					double[] values = calculateIJ(instances, i, j);
-					score += Math.pow(instances.instance(i).value(j) - values[0] - values[1] + mFutureMeans.get(), 2);
+					score += Math.pow(instances.instance(i).value(j) - values[0] - values[1] + mMeans, 2);
 				}
 			}
 		}catch(Exception e){
 			e.printStackTrace();
+		}finally{
+			System.out.println("Compute H over");
 		}
 		
 		score /= (instances.numAttributes() * instances.numInstances());
@@ -460,6 +498,19 @@ public class BiClustering {
 		}
 	}
 */
+	public double calculateMeans(Instances instances) {
+		double mean = 0.0;
+		for (int i = 0; i < instances.numInstances(); i++) {
+			for (int j = 0; j < instances.numAttributes(); j++) {
+				mean += instances.instance(i).value(j);
+			}
+		}
+		mean /= instances.numAttributes() * instances.numInstances();
+		
+		System.out.println("Compute Means over");
+		return mean;
+		
+	}
 	private class ComputeMeans implements Callable<Double>{
 		private Instances instances;
 		
@@ -475,6 +526,7 @@ public class BiClustering {
 				}
 			}
 			mean /= instances.numAttributes() * instances.numInstances();
+			System.out.println("Compute Means over");
 			return mean;
 		}
 	}
@@ -619,7 +671,6 @@ public class BiClustering {
 	}
 
 	public static void main(String[] args) {
-		// TODO Auto-generated method stub
-
+		
 	}
 }
