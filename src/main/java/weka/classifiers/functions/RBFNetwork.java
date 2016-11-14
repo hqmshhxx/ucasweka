@@ -177,8 +177,7 @@ public class RBFNetwork extends AbstractClassifier implements OptionHandler, Wei
 
     // only class? -> build ZeroR model
     if (instances.numAttributes() == 1) {
-      System.err
-        .println("Cannot build model (only class attribute present in data!), "
+      System.err.println("Cannot build model (only class attribute present in data!), "
           + "using ZeroR model instead!");
       m_ZeroR = new weka.classifiers.rules.ZeroR();
       m_ZeroR.buildClassifier(instances);
