@@ -62,7 +62,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	 * holds the cluster centroids. 聚类中心
 	 */
 	protected Instances m_ClusterCentroids;
-
+	
 	protected Instances[] mClusters;
 
 	/**
@@ -117,13 +117,17 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	/**
 	 * Maximum number of iterations to be executed. 最大迭代次数
 	 */
-	protected int m_MaxIterations = 80;
+	protected int m_MaxIterations = 500;
 
 	/**
 	 * Holds the squared errors for all clusters. 平方误差
 	 */
 	protected double[] m_squaredErrors;
-	/*
+
+	/** whether to use fast calculation of distances (using a cut-off). */
+	protected boolean m_FastDistanceCalc = false;
+
+	/**
 	 * objective function result 目标函数值
 	 */
 	private double m_OFR = 100;
@@ -132,7 +136,10 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	 * a small value used to verify if clustering has converged. 目标函数值改变量范围
 	 */
 	private double m_EndValue = 1e-5;
-
+	/**
+	 *  objective function value. 目标函数值
+	 */
+	private double m_ObjFunValue = 0;
 	/**
 	 * uij is the degree of membership of xi in the cluster j
 	 */
@@ -163,6 +170,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		m_SeedDefault = 10;
 		setSeed(m_SeedDefault);
 	}
+
 	/**
 	 * Start the pool of execution threads
 	 */
@@ -170,6 +178,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		if (m_executorPool != null) {
 			m_executorPool.shutdownNow();
 		}
+
 		m_executorPool = Executors.newFixedThreadPool(m_executionSlots);
 	}
 
@@ -179,10 +188,12 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		double[] d = new double[m_NumClusters];
 		double top = 0, bottom = 0, sum;
 		for (int j = 0; j < m_NumClusters; j++) {
-			top = m_DistanceFunction.distance(instance,m_ClusterCentroids.instance(j));
+			top = m_DistanceFunction.distance(instance,
+					m_ClusterCentroids.instance(j));
 			sum = 0;
 			for (int k = 0; k < m_NumClusters; k++) {
-				bottom = m_DistanceFunction.distance(instance,m_ClusterCentroids.instance(k));
+				bottom = m_DistanceFunction.distance(instance,
+						m_ClusterCentroids.instance(k));
 				sum += Math.pow(top / bottom, 2.0 / (m_fuzzifier - 1));
 			}
 			d[j] = 1f / sum;
@@ -216,8 +227,10 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		m_ClusterSizes = new double[m_NumClusters];
 		m_Assignments = new int[instances.numInstances()];
 
-		m_ClusterNominalCounts = new double[m_NumClusters][instances.numAttributes()][];
-		m_ClusterMissingCounts = new double[m_NumClusters][instances.numAttributes()];
+		m_ClusterNominalCounts = new double[m_NumClusters][instances
+				.numAttributes()][];
+		m_ClusterMissingCounts = new double[m_NumClusters][instances
+				.numAttributes()];
 		if (m_displayStdDevs) {
 			m_FullStdDevs = instances.variances();
 		}
@@ -233,15 +246,18 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 					m_FullStdDevs[i] = Math.sqrt(m_FullStdDevs[i]);
 				}
 				if (m_FullMissingCounts[i] == sumOfWeights) {
-					m_FullMeansOrMediansOrModes[i] = Double.NaN; // mark missing as mean
+					m_FullMeansOrMediansOrModes[i] = Double.NaN; // mark missing
+																	// as mean
 				}
 			} else {
-				if (m_FullMissingCounts[i] > m_FullNominalCounts[i][Utils.maxIndex(m_FullNominalCounts[i])]) {
-					m_FullMeansOrMediansOrModes[i] = -1; // mark missing as most common value
+				if (m_FullMissingCounts[i] > m_FullNominalCounts[i][Utils
+						.maxIndex(m_FullNominalCounts[i])]) {
+					m_FullMeansOrMediansOrModes[i] = -1; // mark missing as most
+															// common value
 				}
 			}
 		}
-		mClusters = new Instances[m_NumClusters];
+
 		m_ClusterCentroids = new Instances(instances, m_NumClusters);
 		m_DistanceFunction.setInstances(instances);
 		Random RandomO = new Random(getSeed());
@@ -274,17 +290,18 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		m_NumClusters = m_ClusterCentroids.numInstances();
 		// removing reference
 		initInstances = null;
+		
 		m_squaredErrors = new double[m_NumClusters];
 		m_ClusterNominalCounts = new double[m_NumClusters][instances.numAttributes()][0];
 		m_ClusterMissingCounts = new double[m_NumClusters][instances.numAttributes()];
 		startExecutorPool();
 		initMemberShip(instances);
-		double difference = 0.0d;
+		double lastFunVal = 0.0d;
 		do {
 			updateCentroid(instances);
 			updateMemberShip(instances);
-			difference = calculateObjectiveFunction(instances);
-		} while (difference > m_OFR && ++m_Iterations < m_MaxIterations);
+			calculateObjectiveFunction(instances);
+		} while (Math.abs(m_ObjFunValue - lastFunVal) > m_EndValue && ++m_Iterations < m_MaxIterations);
 		// 更新m_Assignments;
 		updateClustersInfo(instances);
 		m_executorPool.shutdown();
@@ -304,13 +321,13 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			if (i == m_NumClusters - 1) {
 				end = instances.numInstances();
 			}
-			results.add(m_executorPool.submit(new InitMembershipTask(instances,start, end)));
+			results.add(m_executorPool.submit(new InitMembershipTask(instances, start, end)));
 		}
-		try {
-			for (Future<Boolean> task : results) {
+		try{
+			for(Future<Boolean> task : results){
 				task.get();
 			}
-		} catch (Exception e) {
+		}catch(Exception e){
 			e.printStackTrace();
 		}
 	}
@@ -373,7 +390,8 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			double[] attributes = new double[insts.numAttributes()];
 			Instance in = new DenseInstance(1.0, attributes);
 			for (int i = 0; i < insts.numInstances(); i++) {
-				double uValue = Math.pow(memberShip.get(i, centroidIndex),m_fuzzifier);
+				double uValue = Math.pow(memberShip.get(i, centroidIndex),
+						m_fuzzifier);
 				bottom += uValue;
 				for (int j = 0; j < insts.numAttributes(); j++) {
 					double attValue = in.value(j);
@@ -392,13 +410,13 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	private synchronized void updateMemberShip(Instances instances) {
 		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
 		for (int j = 0; j < m_NumClusters; j++) {
-			results.add(m_executorPool.submit(new ComputeMembershipTask(j,instances)));
+			results.add(m_executorPool.submit(new ComputeMembershipTask(j, instances)));
 		}
-		try {
-			for (Future<Boolean> task : results) {
+		try{
+			for(Future<Boolean> task : results){
 				task.get();
 			}
-		} catch (Exception e) {
+		}catch(Exception e){
 			e.printStackTrace();
 		}
 	}
@@ -429,7 +447,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		}
 	}
 
-	private synchronized double calculateObjectiveFunction(Instances instances) {
+	private synchronized double  calculateObjectiveFunction(Instances instances) {
 		double sum = 0;
 		int numPerTask = instances.numInstances() / m_executionSlots;
 		List<Future<Double>> results = new ArrayList<Future<Double>>();
@@ -439,8 +457,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			if (i == m_NumClusters - 1) {
 				end = instances.numInstances();
 			}
-			Future<Double> task = m_executorPool
-					.submit(new ComputeObjectvieFunction(instances, start, end));
+			Future<Double> task = m_executorPool.submit(new ComputeObjectvieFunction(instances, start, end));
 			results.add(task);
 		}
 		try {
@@ -451,6 +468,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		m_ObjFunValue = sum;
 		return sum;
 	}
 
@@ -469,8 +487,10 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			double sum = 0, dist = 0;
 			for (int i = start; i < end; i++) {
 				for (int j = 0; j < m_NumClusters; j++) {
-					dist = m_DistanceFunction.distance(ins.instance(i),m_ClusterCentroids.instance(j));
-					sum += Math.pow(memberShip.get(i, j), m_fuzzifier)* Math.pow(dist, 2);
+					dist = m_DistanceFunction.distance(ins.instance(i),
+							m_ClusterCentroids.instance(j));
+					sum += Math.pow(memberShip.get(i, j), m_fuzzifier)
+							* Math.pow(dist, 2);
 				}
 			}
 			return sum;
@@ -498,8 +518,11 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			m_Assignments[i] = index;
 			mClusters[index].add(instances.get(i));
 			m_ClusterSizes[index] += 1;
-			dist = m_DistanceFunction.distance(instances.instance(i),m_ClusterCentroids.instance(index));
-			m_squaredErrors[index] += dist * dist * instances.instance(i).weight();
+
+			dist = m_DistanceFunction.distance(instances.instance(i),
+					m_ClusterCentroids.instance(index));
+			m_squaredErrors[index] = dist * dist
+					* instances.instance(i).weight();
 		}
 
 		// update m_ClusterStdDevs m_ClusterNominalCounts m_ClusterMissingCounts
@@ -616,8 +639,10 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 
 		result = new TechnicalInformation(Type.INPROCEEDINGS);
 		result.setValue(Field.AUTHOR, "D. Arthur and S. Vassilvitskii");
-		result.setValue(Field.TITLE,"FastFCM: the advantages of carefull seeding");
-		result.setValue(Field.BOOKTITLE,"Proceedings of the eighteenth annual "
+		result.setValue(Field.TITLE,
+				"k-means++: the advantages of carefull seeding");
+		result.setValue(Field.BOOKTITLE,
+				"Proceedings of the eighteenth annual "
 						+ "ACM-SIAM symposium on Discrete algorithms");
 		result.setValue(Field.YEAR, "2007");
 		result.setValue(Field.PAGES, "1027-1035");
@@ -632,6 +657,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			throw new Exception("Number of clusters must be > 0");
 		}
 		m_NumClusters = n;
+
 	}
 
 	/**
@@ -658,8 +684,11 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 
 	/**
 	 * set the maximum number of iterations to be executed.
-	 * @param n the maximum number of iterations
-	 * @throws Exception if maximum number of iteration is smaller than 1
+	 * 
+	 * @param n
+	 *            the maximum number of iterations
+	 * @throws Exception
+	 *             if maximum number of iteration is smaller than 1
 	 */
 	public void setMaxIterations(int n) throws Exception {
 		if (n <= 0) {
@@ -701,7 +730,8 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	/**
 	 * Sets whether missing values are to be replaced.
 	 * 
-	 * @param r true if missing values are to be replaced
+	 * @param r
+	 *            true if missing values are to be replaced
 	 */
 	public void setDontReplaceMissingValues(boolean r) {
 		m_dontReplaceMissing = r;
@@ -709,6 +739,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 
 	/**
 	 * Gets whether missing values are to be replaced.
+	 * 
 	 * @return true if missing values are to be replaced
 	 */
 	public boolean getDontReplaceMissingValues() {
@@ -718,7 +749,8 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	/**
 	 * Sets whether order of instances must be preserved.
 	 * 
-	 * @param r true if missing values are to be replaced
+	 * @param r
+	 *            true if missing values are to be replaced
 	 */
 	public void setPreserveInstancesOrder(boolean r) {
 		m_PreserveOrder = r;
@@ -726,13 +758,35 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 
 	/**
 	 * Gets whether order of instances must be preserved.
+	 * 
 	 * @return true if missing values are to be replaced
 	 */
 	public boolean getPreserveInstancesOrder() {
 		return m_PreserveOrder;
 	}
+
+	/**
+	 * Sets whether to use faster distance calculation.
+	 * 
+	 * @param value
+	 *            true if faster calculation to be used
+	 */
+	public void setFastDistanceCalc(boolean value) {
+		m_FastDistanceCalc = value;
+	}
+
+	/**
+	 * Gets whether to use faster distance calculation.
+	 * 
+	 * @return true if faster calculation is used
+	 */
+	public boolean getFastDistanceCalc() {
+		return m_FastDistanceCalc;
+	}
+
 	/**
 	 * Gets the the cluster centroids.
+	 * 
 	 * @return the cluster centroids
 	 */
 	public Instances getClusterCentroids() {
@@ -765,7 +819,11 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	 * @see #m_FastDistanceCalc
 	 */
 	public double getSquaredError() {
-		return Utils.sum(m_squaredErrors);
+		if (m_FastDistanceCalc) {
+			return Double.NaN;
+		} else {
+			return Utils.sum(m_squaredErrors);
+		}
 	}
 
 	/**
@@ -796,16 +854,9 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		return m_Assignments;
 	}
 
-	public Instances[] getClusters() {
+	public Instances[] getClusters(){
 		return mClusters;
 	}
-	public void setObjFun(double mEndVal){
-		m_OFR  = mEndVal;
-	}
-	public double getObjFun(){
-		return m_OFR  ;
-	}
-
 	@Override
 	public void setOptions(String[] options) throws Exception {
 		// TODO Auto-generated method stub
@@ -818,10 +869,6 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		optionString = Utils.getOption("I", options);
 		if (optionString.length() != 0) {
 			setMaxIterations(Integer.parseInt(optionString));
-		}
-		optionString = Utils.getOption("ov", options);
-		if (optionString.length() != 0) {
-			setObjFun(Double.parseDouble(optionString));
 		}
 		m_PreserveOrder = Utils.getFlag("O", options);
 		super.setOptions(options);
@@ -843,10 +890,12 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		result.add("-N");
 		result.add("" + getNumClusters());
 
+		result.add("-A");
+		result.add((m_DistanceFunction.getClass().getName() + " " + Utils
+				.joinOptions(m_DistanceFunction.getOptions())).trim());
+
 		result.add("-I");
 		result.add("" + getMaxIterations());
-		result.add("-OV");
-		result.add("" + getObjFun());
 
 		if (m_PreserveOrder) {
 			result.add("-O");
@@ -886,11 +935,14 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		for (int i = 0; i < m_NumClusters; i++) {
 			for (int j = 0; j < m_ClusterCentroids.numAttributes(); j++) {
 				if (m_ClusterCentroids.attribute(j).name().length() > maxAttWidth) {
-					maxAttWidth = m_ClusterCentroids.attribute(j).name().length();
+					maxAttWidth = m_ClusterCentroids.attribute(j).name()
+							.length();
 				}
 				if (m_ClusterCentroids.attribute(j).isNumeric()) {
 					containsNumeric = true;
-					double width = Math.log(Math.abs(m_ClusterCentroids.instance(i).value(j))) / Math.log(10.0);
+					double width = Math.log(Math.abs(m_ClusterCentroids
+							.instance(i).value(j))) / Math.log(10.0);
+
 					if (width < 0) {
 						width = 1;
 					}
@@ -906,7 +958,8 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			if (m_ClusterCentroids.attribute(i).isNominal()) {
 				Attribute a = m_ClusterCentroids.attribute(i);
 				for (int j = 0; j < m_ClusterCentroids.numInstances(); j++) {
-					String val = a.value((int) m_ClusterCentroids.instance(j).value(i));
+					String val = a.value((int) m_ClusterCentroids.instance(j)
+							.value(i));
 					if (val.length() > maxWidth) {
 						maxWidth = val.length();
 					}
@@ -966,17 +1019,19 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			maxWidth = "missing".length() + 1;
 		}
 		StringBuffer temp = new StringBuffer();
-		temp.append("\nFastFCM\n======\n");
+		temp.append("\nFuzzyCMeans\n======\n");
 		temp.append("\nNumber of iterations: " + m_Iterations);
 		temp.append("\tthe seed: " + m_Seed);
-		
-		temp.append("\n");
-		if (m_DistanceFunction instanceof EuclideanDistance) {
-			temp.append("Within cluster sum of squared errors: "+ Utils.sum(m_squaredErrors));
-		} else {
-			temp.append("Sum of within cluster distances: "+ Utils.sum(m_squaredErrors));
+		if (!m_FastDistanceCalc) {
+			temp.append("\n");
+			if (m_DistanceFunction instanceof EuclideanDistance) {
+				temp.append("Within cluster sum of squared errors: "
+						+ Utils.sum(m_squaredErrors));
+			} else {
+				temp.append("Sum of within cluster distances: "
+						+ Utils.sum(m_squaredErrors));
+			}
 		}
-		
 
 		if (!m_dontReplaceMissing) {
 			temp.append("\nMissing values globally replaced with mean/mode");
@@ -987,26 +1042,32 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 				- "Cluster#".length(), true));
 
 		temp.append("\n");
-		temp.append(pad("Attribute", " ", maxAttWidth - "Attribute".length(),false));
+		temp.append(pad("Attribute", " ", maxAttWidth - "Attribute".length(),
+				false));
 
-		temp.append(pad("Full Data", " ", maxWidth + 1 - "Full Data".length(),true));
+		temp.append(pad("Full Data", " ", maxWidth + 1 - "Full Data".length(),
+				true));
 		// cluster numbers
 		for (int i = 0; i < m_NumClusters; i++) {
 			String clustNum = "" + i;
-			temp.append(pad(clustNum, " ", maxWidth + 1 - clustNum.length(),true));
+			temp.append(pad(clustNum, " ", maxWidth + 1 - clustNum.length(),
+					true));
 		}
 		temp.append("\n");
 
 		// cluster sizes
 		String cSize = "(" + Utils.sum(m_ClusterSizes) + ")";
-		temp.append(pad(cSize, " ",maxAttWidth + maxWidth + 1 - cSize.length(), true));
+		temp.append(pad(cSize, " ",
+				maxAttWidth + maxWidth + 1 - cSize.length(), true));
 		for (int i = 0; i < m_NumClusters; i++) {
 			cSize = "(" + m_ClusterSizes[i] + ")";
 			temp.append(pad(cSize, " ", maxWidth + 1 - cSize.length(), true));
 		}
 		temp.append("\n");
 
-		temp.append(pad("", "=",maxAttWidth+ (maxWidth * (m_ClusterCentroids.numInstances() + 1)
+		temp.append(pad("", "=",
+				maxAttWidth
+						+ (maxWidth * (m_ClusterCentroids.numInstances() + 1)
 								+ m_ClusterCentroids.numInstances() + 1), true));
 		temp.append("\n");
 		for (int i = 0; i < m_ClusterCentroids.numAttributes(); i++) {
@@ -1021,35 +1082,51 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			// full data
 			if (m_ClusterCentroids.attribute(i).isNominal()) {
 				if (m_FullMeansOrMediansOrModes[i] == -1) { // missing
-					valMeanMode = pad("missing", " ",maxWidth + 1 - "missing".length(), true);
+					valMeanMode = pad("missing", " ",
+							maxWidth + 1 - "missing".length(), true);
 				} else {
 					valMeanMode = pad((strVal = m_ClusterCentroids.attribute(i)
-							.value((int) m_FullMeansOrMediansOrModes[i])), " ",maxWidth + 1 - strVal.length(), true);
+							.value((int) m_FullMeansOrMediansOrModes[i])), " ",
+							maxWidth + 1 - strVal.length(), true);
 				}
 			} else {
 				if (Double.isNaN(m_FullMeansOrMediansOrModes[i])) {
-					valMeanMode = pad("missing", " ",maxWidth + 1 - "missing".length(), true);
+					valMeanMode = pad("missing", " ",
+							maxWidth + 1 - "missing".length(), true);
 				} else {
-					valMeanMode = pad((strVal = Utils.doubleToString(m_FullMeansOrMediansOrModes[i],
-											maxWidth, 4).trim()), " ", maxWidth+ 1 - strVal.length(), true);
+					valMeanMode = pad(
+							(strVal = Utils
+									.doubleToString(
+											m_FullMeansOrMediansOrModes[i],
+											maxWidth, 4).trim()), " ", maxWidth
+									+ 1 - strVal.length(), true);
 				}
 			}
 			temp.append(valMeanMode);
 			for (int j = 0; j < m_NumClusters; j++) {
 				if (m_ClusterCentroids.attribute(i).isNominal()) {
 					if (m_ClusterCentroids.instance(j).isMissing(i)) {
-						valMeanMode = pad("missing", " ", maxWidth + 1- "missing".length(), true);
+						valMeanMode = pad("missing", " ", maxWidth + 1
+								- "missing".length(), true);
 					} else {
-						valMeanMode = pad((strVal = m_ClusterCentroids.attribute(i)
-								.value((int) m_ClusterCentroids.instance(j).value(i))),
-								" ",maxWidth + 1 - strVal.length(), true);
+						valMeanMode = pad(
+								(strVal = m_ClusterCentroids.attribute(i)
+										.value((int) m_ClusterCentroids
+												.instance(j).value(i))), " ",
+								maxWidth + 1 - strVal.length(), true);
 					}
 				} else {
 					if (m_ClusterCentroids.instance(j).isMissing(i)) {
-						valMeanMode = pad("missing", " ", maxWidth + 1- "missing".length(), true);
+						valMeanMode = pad("missing", " ", maxWidth + 1
+								- "missing".length(), true);
 					} else {
-						valMeanMode = pad((strVal = Utils.doubleToString(m_ClusterCentroids.instance(j).value(i), maxWidth, 4)
-										.trim()), " ",maxWidth + 1 - strVal.length(), true);
+						valMeanMode = pad(
+								(strVal = Utils
+										.doubleToString(
+												m_ClusterCentroids.instance(j)
+														.value(i), maxWidth, 4)
+										.trim()), " ",
+								maxWidth + 1 - strVal.length(), true);
 					}
 				}
 				temp.append(valMeanMode);
@@ -1058,28 +1135,37 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			if (m_displayStdDevs) {
 				// Std devs/max nominal
 				String stdDevVal = "";
+
 				if (m_ClusterCentroids.attribute(i).isNominal()) {
 					// Do the values of the nominal attribute
 					Attribute a = m_ClusterCentroids.attribute(i);
 					for (int j = 0; j < a.numValues(); j++) {
 						// full data
 						String val = "  " + a.value(j);
-						temp.append(pad(val, " ",maxAttWidth + 1 - val.length(), false));
+						temp.append(pad(val, " ",
+								maxAttWidth + 1 - val.length(), false));
 						double count = m_FullNominalCounts[i][j];
-						int percent = (int) ((double) m_FullNominalCounts[i][j]/ Utils.sum(m_ClusterSizes) * 100.0);
+						int percent = (int) ((double) m_FullNominalCounts[i][j]
+								/ Utils.sum(m_ClusterSizes) * 100.0);
 						String percentS = "" + percent + "%)";
-						percentS = pad(percentS, " ", 5 - percentS.length(),true);
+						percentS = pad(percentS, " ", 5 - percentS.length(),
+								true);
 						stdDevVal = "" + count + " (" + percentS;
-						stdDevVal = pad(stdDevVal, " ", maxWidth + 1- stdDevVal.length(), true);
+						stdDevVal = pad(stdDevVal, " ", maxWidth + 1
+								- stdDevVal.length(), true);
 						temp.append(stdDevVal);
 
 						// Clusters
 						for (int k = 0; k < m_NumClusters; k++) {
-							percent = (int) ((double) m_ClusterNominalCounts[k][i][j]/ m_ClusterSizes[k] * 100.0);
+							percent = (int) ((double) m_ClusterNominalCounts[k][i][j]
+									/ m_ClusterSizes[k] * 100.0);
 							percentS = "" + percent + "%)";
-							percentS = pad(percentS, " ",5 - percentS.length(), true);
-							stdDevVal = "" + m_ClusterNominalCounts[k][i][j]+ " (" + percentS;
-							stdDevVal = pad(stdDevVal, " ", maxWidth + 1- stdDevVal.length(), true);
+							percentS = pad(percentS, " ",
+									5 - percentS.length(), true);
+							stdDevVal = "" + m_ClusterNominalCounts[k][i][j]
+									+ " (" + percentS;
+							stdDevVal = pad(stdDevVal, " ", maxWidth + 1
+									- stdDevVal.length(), true);
 							temp.append(stdDevVal);
 						}
 						temp.append("\n");
@@ -1087,35 +1173,50 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 					// missing (if any)
 					if (m_FullMissingCounts[i] > 0) {
 						// Full data
-						temp.append(pad("  missing", " ", maxAttWidth + 1- "  missing".length(), false));
+						temp.append(pad("  missing", " ", maxAttWidth + 1
+								- "  missing".length(), false));
 						double count = m_FullMissingCounts[i];
-						int percent = (int) ((double) m_FullMissingCounts[i]/ Utils.sum(m_ClusterSizes) * 100.0);
+						int percent = (int) ((double) m_FullMissingCounts[i]
+								/ Utils.sum(m_ClusterSizes) * 100.0);
 						String percentS = "" + percent + "%)";
-						percentS = pad(percentS, " ", 5 - percentS.length(),true);
+						percentS = pad(percentS, " ", 5 - percentS.length(),
+								true);
 						stdDevVal = "" + count + " (" + percentS;
-						stdDevVal = pad(stdDevVal, " ", maxWidth + 1- stdDevVal.length(), true);
+						stdDevVal = pad(stdDevVal, " ", maxWidth + 1
+								- stdDevVal.length(), true);
 						temp.append(stdDevVal);
 
 						// Clusters
 						for (int k = 0; k < m_NumClusters; k++) {
-							percent = (int) ((double) m_ClusterMissingCounts[k][i]/ m_ClusterSizes[k] * 100.0);
+							percent = (int) ((double) m_ClusterMissingCounts[k][i]
+									/ m_ClusterSizes[k] * 100.0);
 							percentS = "" + percent + "%)";
-							percentS = pad(percentS, " ",5 - percentS.length(), true);
-							stdDevVal = "" + m_ClusterMissingCounts[k][i]+ " (" + percentS;
-							stdDevVal = pad(stdDevVal, " ", maxWidth + 1- stdDevVal.length(), true);
+							percentS = pad(percentS, " ",
+									5 - percentS.length(), true);
+							stdDevVal = "" + m_ClusterMissingCounts[k][i]
+									+ " (" + percentS;
+							stdDevVal = pad(stdDevVal, " ", maxWidth + 1
+									- stdDevVal.length(), true);
 							temp.append(stdDevVal);
 						}
+
 						temp.append("\n");
 					}
+
 					temp.append("\n");
 				} else {
 					// Full data
 					if (Double.isNaN(m_FullMeansOrMediansOrModes[i])) {
-						stdDevVal = pad("--", " ", maxAttWidth + maxWidth + 1- 2, true);
+						stdDevVal = pad("--", " ", maxAttWidth + maxWidth + 1
+								- 2, true);
 					} else {
-						stdDevVal = pad((strVal = plusMinus+ Utils.doubleToString(
-										m_FullStdDevs[i], maxWidth, 4).trim()), " ", maxWidth
-										+ maxAttWidth + 1 - strVal.length(),true);
+						stdDevVal = pad(
+								(strVal = plusMinus
+										+ Utils.doubleToString(
+												m_FullStdDevs[i], maxWidth, 4)
+												.trim()), " ", maxWidth
+										+ maxAttWidth + 1 - strVal.length(),
+								true);
 					}
 					temp.append(stdDevVal);
 
@@ -1124,8 +1225,13 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 						if (m_ClusterCentroids.instance(j).isMissing(i)) {
 							stdDevVal = pad("--", " ", maxWidth + 1 - 2, true);
 						} else {
-							stdDevVal = pad((strVal = plusMinus+ Utils.doubleToString(
-									m_ClusterStdDevs.instance(j).value(i),maxWidth, 4).trim()), " ",
+							stdDevVal = pad(
+									(strVal = plusMinus
+											+ Utils.doubleToString(
+													m_ClusterStdDevs
+															.instance(j).value(
+																	i),
+													maxWidth, 4).trim()), " ",
 									maxWidth + 1 - strVal.length(), true);
 						}
 						temp.append(stdDevVal);
@@ -1134,6 +1240,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 				}
 			}
 		}
+
 		temp.append("\n\n");
 		return temp.toString();
 	}
