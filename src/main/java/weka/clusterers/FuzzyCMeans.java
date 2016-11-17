@@ -135,7 +135,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	/**
 	 * a small value used to verify if clustering has converged. 目标函数值改变量范围
 	 */
-	private double m_EndValue = 1e-5;
+	private double m_EndValue = 1e-20;
 	/**
 	 *  objective function value. 目标函数值
 	 */
@@ -225,6 +225,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			instances = Filter.useFilter(instances, m_ReplaceMissingFilter);
 		}
 		m_ClusterSizes = new double[m_NumClusters];
+		mClusters = new Instances[m_NumClusters];
 		m_Assignments = new int[instances.numInstances()];
 
 		m_ClusterNominalCounts = new double[m_NumClusters][instances
@@ -271,7 +272,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		} else {
 			initInstances = instances;
 		}
-		// random
+		// random//在这里随机选取聚类中心没有用，随机初始化membersh才有用
 		for (int j = initInstances.numInstances() - 1; j >= 0; j--) {
 			instIndex = RandomO.nextInt(j + 1);
 			hk = new DecisionTableHashKey(initInstances.instance(instIndex),
@@ -290,7 +291,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		m_NumClusters = m_ClusterCentroids.numInstances();
 		// removing reference
 		initInstances = null;
-		
+		memberShip = new Matrix(instances.numInstances(), m_NumClusters);
 		m_squaredErrors = new double[m_NumClusters];
 		m_ClusterNominalCounts = new double[m_NumClusters][instances.numAttributes()][0];
 		m_ClusterMissingCounts = new double[m_NumClusters][instances.numAttributes()];
@@ -298,10 +299,13 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		initMemberShip(instances);
 		double lastFunVal = 0.0d;
 		do {
+			lastFunVal = m_ObjFunValue;
 			updateCentroid(instances);
 			updateMemberShip(instances);
 			calculateObjectiveFunction(instances);
-		} while (Math.abs(m_ObjFunValue - lastFunVal) > m_EndValue && ++m_Iterations < m_MaxIterations);
+			if(Math.abs(m_ObjFunValue - lastFunVal) == m_EndValue)break;
+			
+		} while (++m_Iterations < m_MaxIterations);
 		// 更新m_Assignments;
 		updateClustersInfo(instances);
 		m_executorPool.shutdown();
@@ -311,7 +315,6 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	}
 
 	public synchronized void initMemberShip(Instances instances) {
-		/* 初始化membership也就是uij */
 		memberShip = new Matrix(instances.numInstances(), m_NumClusters);
 		int numPerTask = instances.numInstances() / m_executionSlots;
 		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
@@ -1032,11 +1035,17 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 						+ Utils.sum(m_squaredErrors));
 			}
 		}
-
+		temp.append("\n\nInitial starting points (");
+		temp.append("random");
+		temp.append("):\n");
+		for (int i = 0; i < m_initialStartPoints.numInstances(); i++) {
+			temp.append("Cluster " + i + ": "+ m_initialStartPoints.instance(i)).append("\n");
+		}
+		
 		if (!m_dontReplaceMissing) {
 			temp.append("\nMissing values globally replaced with mean/mode");
 		}
-
+		
 		temp.append("\n\nFinal cluster centroids:\n");
 		temp.append(pad("Cluster#", " ", (maxAttWidth + (maxWidth * 2 + 2))
 				- "Cluster#".length(), true));
@@ -1242,6 +1251,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		}
 
 		temp.append("\n\n");
+		temp.append("objFunValue="+m_ObjFunValue);
 		return temp.toString();
 	}
 
