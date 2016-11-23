@@ -708,6 +708,13 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	public int getMaxIterations() {
 		return m_MaxIterations;
 	}
+	
+	public void setFuzzifier(double val){
+		m_fuzzifier = val;
+	}
+	public double getFuzzifier(){
+		return m_fuzzifier;
+	}
 
 	/**
 	 * Sets whether standard deviations and nominal count. Should be displayed
@@ -873,6 +880,10 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		if (optionString.length() != 0) {
 			setMaxIterations(Integer.parseInt(optionString));
 		}
+		optionString = Utils.getOption("F", options);
+		if (optionString.length() != 0) {
+			setFuzzifier(Double.parseDouble(optionString));
+		}
 		m_PreserveOrder = Utils.getFlag("O", options);
 		super.setOptions(options);
 		Utils.checkForRemainingOptions(options);
@@ -899,6 +910,9 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 
 		result.add("-I");
 		result.add("" + getMaxIterations());
+		
+		result.add("F");
+		result.add("" + getFuzzifier());
 
 		if (m_PreserveOrder) {
 			result.add("-O");
