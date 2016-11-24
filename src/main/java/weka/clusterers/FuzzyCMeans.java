@@ -148,7 +148,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	/**
 	 * holds the fuzzifier 模糊算子(加权指数)
 	 */
-	private double m_fuzzifier = 2;
+	private double m_fuzzifier = 3;
 
 	/**
 	 * Assignments obtained.(cluster indexes).
@@ -226,6 +226,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		}
 		m_ClusterSizes = new double[m_NumClusters];
 		m_Assignments = new int[instances.numInstances()];
+		mClusters = new Instances[m_NumClusters];
 
 		m_ClusterNominalCounts = new double[m_NumClusters][instances
 				.numAttributes()][];
