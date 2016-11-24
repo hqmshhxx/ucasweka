@@ -2,7 +2,6 @@ package weka.clusterers;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.Callable;
@@ -10,7 +9,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import weka.classifiers.rules.DecisionTableHashKey;
 import weka.clusterers.NumberOfClustersRequestable;
 import weka.clusterers.RandomizableClusterer;
 import weka.core.Attribute;
@@ -28,10 +26,9 @@ import weka.core.TechnicalInformationHandler;
 import weka.core.Utils;
 import weka.core.WeightedInstancesHandler;
 import weka.core.matrix.Matrix;
-import weka.filters.Filter;
 import weka.filters.unsupervised.attribute.ReplaceMissingValues;
 
-public class FuzzyCMeans extends RandomizableClusterer implements
+public class ABCFCM extends RandomizableClusterer implements
 		NumberOfClustersRequestable, WeightedInstancesHandler,
 		TechnicalInformationHandler {
 
@@ -52,12 +49,7 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	 * number of clusters to generate. 产生聚类个数
 	 */
 	protected int m_NumClusters = 3;
-	/**
-	 * Holds the initial start points, as supplied by the initialization method
-	 * used
-	 */
-	protected Instances m_initialStartPoints;
-
+	
 	/**
 	 * holds the cluster centroids. 聚类中心
 	 */
@@ -144,6 +136,8 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	 * uij is the degree of membership of xi in the cluster j
 	 */
 	private Matrix memberShip;
+	
+	private Instances instances;
 
 	/**
 	 * holds the fuzzifier 模糊算子(加权指数)
@@ -155,18 +149,88 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	 * 
 	 */
 	protected int[] m_Assignments = null;
-	/**
-	 * assume that a cluster has 68% probability
-	 */
-	private double probCluster = 0.68;
 
 	/** Number of threads to run */
 	protected int m_executionSlots = 3;
 
 	/** For parallel execution mode */
 	protected transient ExecutorService m_executorPool;
+	
+	
+	/** The number of colony size (employed bees+onlooker bees) */
+	int NP = 100;
+	/** The number of food sources equals the half of the colony size */
+	int foodNum = NP / 2;
+	/**
+	 * A food source which could not be improved through "limit" trials is
+	 * abandoned by its employed bee
+	 */
+	int limit = 5;
+	/** The number of cycles for foraging {a stopping criteria} */
+	int maxCycle = 10;
+	int mCycle = 0;
 
-	public FuzzyCMeans() {
+	/** Problem specific variables */
+	/** The number of parameters of the problem to be optimized */
+	int dimension = 0;
+	/** lower bound of the parameters. */
+	double lb = 0;
+	/**
+	 * upper bound of the parameters. lb and ub can be defined as arrays for the
+	 * problems of which parameters have different bounds
+	 */
+	double ub = 1;
+
+	/** Algorithm can be run many times in order to see its robustness */
+	int runtime = 1;
+
+	/**
+	 * foods is the population of food sources. Each row of foods matrix is a
+	 * vector holding dimension parameters to be optimized. The number of rows
+	 * of foods matrix equals to the foodNum
+	 * */
+	double foods[][] ;
+
+	/**
+	 * f is a vector holding objective function values associated with food
+	 * sources
+	 */
+	double funVal[] = new double[foodNum];
+	/**
+	 * fitness is a vector holding fitness (quality) values associated with food
+	 * sources
+	 */
+	double fitness[] = new double[foodNum];
+
+	/**
+	 * trial is a vector holding trial numbers through which solutions can not
+	 * be improved
+	 */
+	double trial[] = new double[foodNum];
+
+	/**
+	 * prob is a vector holding probabilities of food sources (solutions) to be
+	 * chosen
+	 */
+	double prob[] = new double[foodNum];
+
+
+	/** Optimum solution obtained by ABC algorithm */
+	double globalMin = Double.MAX_VALUE;
+	/**
+	 * Holds the squared errors for all clusters. 平方误差
+	 */
+	double squaredError=0;
+
+	/** Parameters of the optimum solution */
+	double globalParams[];
+	/** globalMins holds the globalMin of each run in multiple runs */
+	double globalMins[] = new double[runtime];
+
+	
+	
+
+	public ABCFCM() {
 		m_SeedDefault = 10;
 		setSeed(m_SeedDefault);
 	}
@@ -212,23 +276,543 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 	 */
 	@Override
 	public void buildClusterer(Instances data) throws Exception {
-
-		// can clusterer handle the data?
 		getCapabilities().testWithFail(data);
-		m_Iterations = 0;
-		m_ReplaceMissingFilter = new ReplaceMissingValues();
-		Instances instances = new Instances(data);
-//		instances.setClassIndex(-1);
-		System.out.println("instances class index = "+ instances.classIndex());
-		if (!m_dontReplaceMissing) {
-			m_ReplaceMissingFilter.setInputFormat(instances);
-			instances = Filter.useFilter(instances, m_ReplaceMissingFilter);
+		startExecutorPool();
+		instances = new Instances(data);
+		init();
+		double mean = 0;
+		for (int run = 0; run < runtime; run++) {
+			initial();
+			memorizeBestSource();
+			for (int iter = 0; iter < maxCycle; iter++) {
+				mCycle = iter+1;
+				sendEmployedBees();
+				calculateProbabilities();
+				sendOnlookerBees();
+				calculateFcm();
+				memorizeBestSource();
+				sendScoutBees();
+				System.out.println("iter="+iter+" globalMin="+globalMin);
+			}
+			updateClusterInfo();
+			System.out.println("globalMin = "+ globalMin);
+			System.out.println(toString());
+			globalMins[run] = globalMin;
+			mean = mean + globalMin;
 		}
-		m_ClusterSizes = new double[m_NumClusters];
+		int maxIndex = Utils.maxIndex(globalMins);
+		int minIndex = Utils.minIndex(globalMins);
+		double max = globalMins[maxIndex];
+		double min = globalMins[minIndex];
+
+		mean = mean / runtime;
+
+		double stdError = 0;
+
+		for (int j = 0; j < runtime; j++) {
+			stdError += Math.pow(globalMins[j] - mean, 2);
+		}
+		stdError /= runtime;
+		System.out.println("maxFunVal=" + max + " minFunVal=" + min + " mean="
+				+ mean + " stdError=" + stdError);
+		
+		m_executorPool.shutdown();
+		// save memory!
+		m_DistanceFunction.clean();
+
+	}
+	/*
+	 * Variables are initialized in the range [lb,ub]. If each parameter has
+	 * different range, use arrays lb[j], ub[j] instead of lb and ub
+	 */
+	/* Counters of food sources are also initialized in this function */
+
+	public void init(int index) {
+		double[] solution = new double[dimension];
+		for (int j = 0; j < dimension; j++) {
+			foods[index][j] = Math.random() * (ub - lb) + lb;
+			solution[j] = foods[index][j];
+		}
+		funVal[index] = calculateFunction(solution);
+		fitness[index] = calculateFitness(funVal[index]);
+		trial[index] = 0;
+	}
+	private class InitTask implements Callable<Boolean>{
+		private int start;
+		private int end;
+		public InitTask(int start,int end){
+			this.start=start;
+			this.end = end;
+		}
+		public Boolean call(){
+			double[] solution = new double[dimension];
+			for (int i = start; i < end; i++) {
+				for (int j = 0; j < dimension; j++) {
+					foods[i][j] = Math.random() * (ub - lb) + lb;
+					solution[j] = foods[i][j];
+				}
+				funVal[i] = calculateFunction(solution);
+				fitness[i] = calculateFitness(funVal[i]);
+				trial[i] = 0;
+			}
+			return true;
+		}
+	}
+	/* All food sources are initialized */
+	public void initial() {
+		int numPerTask = foodNum / m_executionSlots;
+		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
+		for (int i = 0; i < m_executionSlots; i++) {
+			int start = i * numPerTask;
+			int end = start + numPerTask;
+			if (i == m_executionSlots - 1) {
+				end = foodNum;
+			}
+			results.add(m_executorPool.submit(new InitTask( start, end)));
+		}
+		try{
+			for(Future<Boolean> task : results){
+				task.get();
+			}
+		}catch(Exception e){
+			e.printStackTrace();
+		}
+	}
+
+
+	/**
+	 * mean Euclidean distances between X_{m} and the rest of solutions.
+	 * @return
+	 */
+	public double calculateMean(int index){
+		double sum=0;
+		for(int i=0; i< foodNum; i++){
+			double total = 0;
+			if(index!=i){
+			for(int j=0; j<dimension; j++){
+					total+=Math.pow(foods[index][j] - foods[i][j],2);
+				}
+			}
+			sum+=total;
+		}
+		return sum/(foodNum-1);
+	}
+	/**
+	 * calculate the  neighbor of  X_{m} and itself (N_{m})
+	 * @param index
+	 * @return
+	 */
+	public List<double[]> calculateNeighbor(int index){
+		List<double[]> neighbors = new ArrayList<>();
+		double mean = calculateMean(index);
+		for(int i=0; i<foodNum; i++){
+			double total =0;
+			if(index !=i){
+				for(int j=0; j<dimension; j++){
+					total += Math.pow(foods[index][j] - foods[i][j], 2);
+				}
+			}
+			if(total < mean){
+				neighbors.add(foods[i]);
+			}
+		}
+		return neighbors;
+	}
+	/**
+	 * calculate the best solution among the neighbor of  X_{m} and itself (N_{m})
+	 * @param index
+	 * @return X_{Nm}^best
+	 */
+	public double[] calculateNeighborBest(int index){
+		List<double[]> neighbors = calculateNeighbor(index);
+		double maxFit = lb;
+		double[] maxNeighbor = null;
+		for(double[] neighbor : neighbors){
+			double objVal = calculateFunction(neighbor);
+			double fitness = calculateFitness(objVal);
+			if(maxFit<fitness){
+				maxFit = fitness;
+				maxNeighbor = neighbor;
+			}
+		}
+		return maxNeighbor;
+		
+	}
+	/** The best food source is memorized */
+	public void memorizeBestSource() {
+		int k=0;
+		for (int i = 0; i < foodNum; i++) {
+			if (funVal[i] < globalMin) {
+				globalMin = funVal[i];
+				k=i;
+				for (int j = 0; j < dimension; j++)
+					globalParams[j] = foods[i][j];
+			}
+		}
+	}
+	public void updateClusterInfo(){
+		int k = Utils.minIndex(funVal);
+		double[] solution = new double[dimension];
+		for(int i=0;i<dimension; i++){
+			solution[i]=foods[k][i];
+		}
+		m_ClusterCentroids  = arrayToInstances(solution);
+		double[] errors = buildClusterErrors();
+		squaredError = Utils.sum(errors);
+	}
+private class EmployBeeTask implements Callable<Boolean>{
+	private int start;
+	private int end;
+	public EmployBeeTask(int start,int end){
+		this.start=start;
+		this.end = end;
+	}
+	public Boolean call(){
+		Random rand = new Random();
+		for (int i = start; i < end; i++) {
+			/* The parameter to be changed is determined randomly */
+			int dj = rand.nextInt(dimension);
+			/*
+			 * A randomly chosen solution is used in producing a mutant solution
+			 * of the solution i
+			 */
+			int foodi = rand.nextInt(foodNum);
+			double[] solution = new double[dimension];
+			for (int j = 0; j < dimension; j++) {
+				solution[j] = foods[i][j];
+			}
+			/* v_{ij}=x_{ij}+\phi_{ij}*(x_{kj}-x_{ij}) */
+			double r = rand.nextDouble() * 2 - 1;
+			solution[dj] = foods[i][dj]+ (foods[i][dj] - foods[foodi][dj])
+					* r*(1 + 1/(Math.exp(-maxCycle*1.0/mCycle)+1));
+
+			/*
+			 * if generated parameter value is out of boundaries, it is shifted
+			 * onto the boundaries
+			 */
+			if (solution[dj] < lb)
+				solution[dj] = lb;
+			if (solution[dj] > ub)
+				solution[dj] = ub;
+			double objValSol = calculateFunction(solution);
+			double fitnessSol = calculateFitness(objValSol);
+
+			/*
+			 * a greedy selection is applied between the current solution i and
+			 * its mutant
+			 */
+			if (fitnessSol > fitness[i]) {
+
+				/**
+				 * If the mutant solution is better than the current solution i,
+				 * replace the solution with the mutant and reset the trial
+				 * counter of solution i
+				 * */
+				trial[i] = 0;
+				for (int j = 0; j < dimension; j++)
+					foods[i][j] = solution[j];
+				funVal[i] = objValSol;
+				fitness[i] = fitnessSol;
+			} else {
+				/*
+				 * if the solution i can not be improved, increase its trial
+				 * counter
+				 */
+				trial[i] = trial[i] + 1;
+			}
+		}
+		return true;
+	}
+}
+	
+	/**
+	 * Employed Bee Phase
+	 */
+	public void sendEmployedBees() {
+		int numPerTask = foodNum / m_executionSlots;
+		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
+		for (int i = 0; i < m_executionSlots; i++) {
+			int start = i * numPerTask;
+			int end = start + numPerTask;
+			if (i == m_executionSlots - 1) {
+				end = foodNum;
+			}
+			results.add(m_executorPool.submit(new EmployBeeTask(start, end)));
+		}
+		try{
+			for(Future<Boolean> task : results){
+				task.get();
+			}
+		}catch(Exception e){
+			e.printStackTrace();
+		}
+	}
+
+
+	public void calculateProbabilities() {
+
+		double sum = 0;
+
+		for (int i = 0; i < foodNum; i++) {
+			sum += fitness[i];
+		}
+
+		for (int i = 0; i < foodNum; i++) {
+			prob[i] = fitness[i] / sum;
+		}
+
+	}
+	private class OnlookerBeeTask implements Callable<Boolean>{
+		private int start;
+		private int end;
+		private int neighbour;
+		private Random rand;
+		public OnlookerBeeTask(int start,int end,int neighbour,Random rand){
+			this.start=start;
+			this.end = end;
+			this.neighbour = neighbour;
+			this.rand = rand;
+		}
+		public Boolean call(){
+			double[] solution = new double[dimension];
+					for (int j = 0; j < dimension; j++){
+						solution[j] = foods[start][j];
+					}
+					double[] bestNeighbor = calculateNeighborBest(start);
+					int minFIndex = Utils.minIndex(funVal);
+					
+					/* v_{ij}=x_{ij}+\phi_{ij}*(x_{kj}-x_{ij}) */
+					
+					double r = rand.nextDouble()-1;
+					solution[end] =  bestNeighbor[end]
+							+ (bestNeighbor[end] - foods[neighbour][end])* r+
+							rand.nextDouble()*1.5*(foods[minFIndex][end]-bestNeighbor[end]);
+
+					/*
+					 * if generated parameter value is out of boundaries, it is
+					 * shifted onto the boundaries
+					 */
+					if (solution[end] < lb)
+						solution[end] = lb;
+					if (solution[end] > ub)
+						solution[end] = ub;
+					double objValSol = calculateFunction(solution);
+					double fitnessSol = calculateFitness(objValSol);
+
+					/*
+					 * a greedy selection is applied between the current solution i
+					 * and its mutant
+					 */
+					if (fitnessSol > fitness[start]) {
+						/*
+						 * If the mutant solution is better than the current
+						 * solution i, replace the solution with the mutant and
+						 * reset the trial counter of solution i
+						 */
+						trial[start] = 0;
+						for (int j = 0; j < dimension; j++)
+							foods[start][j] = solution[j];
+						funVal[start] = objValSol;
+						fitness[start] = fitnessSol;
+					} else {
+						/*
+						 * if the solution i can not be improved, increase its trial
+						 * counter
+						 */
+						trial[start] = trial[start] + 1;
+					}
+					return true;
+				}
+	}
+	/** onlooker Bee Phase */
+	public void sendOnlookerBees() {
+
+		int i, j, t;
+		i = 0;
+		t = 0;
+		Random rand = new Random();
+		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
+		while (t < foodNum) {
+			double r = Math.random();
+//			r = ((double) Math.random() * 32767 / ((double) (32767) + (double) (1)));
+			/*
+			 * choose a food source depending on its probability to be chosen
+			 */
+			if (r < prob[i]) {
+				t++;
+
+				/* The parameter to be changed is determined randomly */
+				int dj = rand.nextInt(dimension);
+
+				/*
+				 * A randomly chosen solution is used in producing a mutant
+				 * solution of the solution i
+				 */
+				int neighbour = rand.nextInt(foodNum);
+
+				/*
+				 * Randomly selected solution must be different from the
+				 * solution i
+				 */
+				while (neighbour == i) {
+					// System.out.println(Math.random()*32767+"  "+32767);
+					neighbour = rand.nextInt(foodNum);
+				}
+				results.add(m_executorPool.submit(new OnlookerBeeTask( i, dj,neighbour,rand)));
+			}
+			i++;
+			if (i == foodNum)
+				i = 0;
+		}/* while */
+		try{
+			for(Future<Boolean> task : results){
+				task.get();
+			}
+		}catch(Exception e){
+			e.printStackTrace();
+		}
+		/* end of onlooker bee phase */
+	}
+
+	/*
+	 * determine the food sources whose trial counter exceeds the "limit" value.
+	 * In Basic ABC, only one scout is allowed to occur in each cycle
+	 */
+	public void sendScoutBees() {
+		int maxtrialindex, i;
+		maxtrialindex = 0;
+		for (i = 1; i < foodNum; i++) {
+			if (trial[i] > trial[maxtrialindex])
+				maxtrialindex = i;
+		}
+		if (trial[maxtrialindex] >= limit) {
+			init(maxtrialindex);
+		}
+	}
+	/** Fitness function */
+	public double calculateFitness(double fun) {
+		double result = 0;
+		if (fun >= 0) {
+			result = 1 / (fun + 1);
+		} else {
+			result = 1 + Math.abs(fun);
+		}
+		return result;
+	}
+	private class CalFcmTask implements Callable<Boolean>{
+		private int start;
+		private int end;
+		public CalFcmTask(int start,int end){
+			this.start=start;
+			this.end = end;
+		}
+		public Boolean call(){
+			double[] solution = new double[dimension];
+		
+			for (int i = start; i < end; i++) {
+				for (int u = 0; u < dimension; u++){
+					solution[u] = foods[i][u];
+				}
+				int k =0;
+				m_ClusterCentroids  = arrayToInstances(solution);
+				Instances ins =buildCentroids();
+				for(int ii =0; ii<ins.numInstances();ii++){
+					Instance in = ins.get(ii);
+					for(int jj = 0;jj<in.numAttributes();jj++){
+						solution[k++]=in.value(jj);
+					}
+				}
+	/*
+				if (solution[param2change] < lb)
+					solution[param2change] = lb;
+				if (solution[param2change] > ub)
+					solution[param2change] = ub;
+		*/
+				double objValSol = calculateFunction(solution);
+				double fitnessSol = calculateFitness(objValSol);
+
+				/*
+				 * a greedy selection is applied between the current solution i and
+				 * its mutant
+				 */
+				if (fitnessSol > fitness[i]) {
+
+					/**
+					 * If the mutant solution is better than the current solution i,
+					 * replace the solution with the mutant and reset the trial
+					 * counter of solution i
+					 * */
+					trial[i] = 0;
+					for (int j = 0; j < dimension; j++)
+						foods[i][j] = solution[j];
+					funVal[i] = objValSol;
+					fitness[i] = fitnessSol;
+				} else {
+					/*
+					 * if the solution i can not be improved, increase its trial
+					 * counter
+					 */
+					trial[i] = trial[i] + 1;
+				}
+			}
+		return true;
+		}
+	}
+	public  void calculateFcm(){
+		int numPerTask = foodNum / m_executionSlots;
+		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
+		for (int i = 0; i < m_executionSlots; i++) {
+			int start = i * numPerTask;
+			int end = start + numPerTask;
+			if (i == m_executionSlots - 1) {
+				end = foodNum;
+			}
+			results.add(m_executorPool.submit(new CalFcmTask( start, end)));
+		}
+		try{
+			for(Future<Boolean> task : results){
+				task.get();
+			}
+		}catch(Exception e){
+			e.printStackTrace();
+		}
+	}
+	
+	/**
+	 * calculate function value
+	 * 
+	 * @param sol
+	 * @return
+	 */
+	public  double  calculateFunction(double sol[]) {
+		Instances centroids = arrayToInstances(sol);
+		double funVal = buildModel(centroids);
+		return funVal;
+
+	}
+	public Instances arrayToInstances(double sol[]) {
+		int count = 0;
+		Instances centroids = new Instances(instances, 0);
+		for(int i=0;i<m_NumClusters; i++){
+			double[] val = new double[dimension/m_NumClusters];
+			for(int j=0; j< dimension/m_NumClusters; j++ ){
+				val[j] = sol[count++];
+			}
+			Instance ins = new DenseInstance(1.0,val);
+			centroids.add(ins);
+		}
+		return centroids;
+	}
+	public void init() {
+		dimension = instances.numAttributes()*m_NumClusters;
+		foods = new double[foodNum][dimension];
+		globalParams = new double[dimension];
+		
+		m_DistanceFunction.setInstances(instances);
+		memberShip = new Matrix(instances.numInstances(), m_NumClusters);
 		mClusters = new Instances[m_NumClusters];
 		m_Assignments = new int[instances.numInstances()];
-		mClusters = new Instances[m_NumClusters];
-
+		m_squaredErrors = new double[m_NumClusters];
 		m_ClusterNominalCounts = new double[m_NumClusters][instances
 				.numAttributes()][];
 		m_ClusterMissingCounts = new double[m_NumClusters][instances
@@ -236,7 +820,8 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		if (m_displayStdDevs) {
 			m_FullStdDevs = instances.variances();
 		}
-		m_FullMeansOrMediansOrModes = calculateMeansOrMediansOrModes(0,instances, true);
+		m_FullMeansOrMediansOrModes = calculateMeansOrMediansOrModes(0,
+				instances, true);
 
 		m_FullMissingCounts = m_ClusterMissingCounts[0];
 		m_FullNominalCounts = m_ClusterNominalCounts[0];
@@ -248,158 +833,50 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 					m_FullStdDevs[i] = Math.sqrt(m_FullStdDevs[i]);
 				}
 				if (m_FullMissingCounts[i] == sumOfWeights) {
-					m_FullMeansOrMediansOrModes[i] = Double.NaN; // mark missing
-																	// as mean
+					m_FullMeansOrMediansOrModes[i] = Double.NaN; // mark missing as mean
 				}
 			} else {
 				if (m_FullMissingCounts[i] > m_FullNominalCounts[i][Utils
 						.maxIndex(m_FullNominalCounts[i])]) {
-					m_FullMeansOrMediansOrModes[i] = -1; // mark missing as most
-															// common value
+					m_FullMeansOrMediansOrModes[i] = -1; // mark missing as most common value
 				}
 			}
 		}
+		m_ClusterNominalCounts = new double[m_NumClusters][instances
+				.numAttributes()][0];
+		m_ClusterMissingCounts = new double[m_NumClusters][instances
+				.numAttributes()];
+	}
 
-		m_ClusterCentroids = new Instances(instances, m_NumClusters);
-		m_DistanceFunction.setInstances(instances);
-		Random RandomO = new Random(getSeed());
-		int instIndex;
-		HashMap<DecisionTableHashKey, Integer> initC = new HashMap<DecisionTableHashKey, Integer>();
-		DecisionTableHashKey hk = null;
+	public double buildModel(Instances centroids) {
+		Matrix matrix = updateMemberShip(centroids);
+		double funVal = calculateObjectiveFunction(centroids);
+		return funVal;
+	}
 
-		Instances initInstances = null;
-		if (m_PreserveOrder) {
-			initInstances = new Instances(instances);
-		} else {
-			initInstances = instances;
-		}
-		// random//在这里随机选取聚类中心没有用，随机初始化membersh才有用
-		for (int j = initInstances.numInstances() - 1; j >= 0; j--) {
-			instIndex = RandomO.nextInt(j + 1);
-			hk = new DecisionTableHashKey(initInstances.instance(instIndex),
-					initInstances.numAttributes(), true);
-			if (!initC.containsKey(hk)) {
-				m_ClusterCentroids.add(initInstances.instance(instIndex));
-				initC.put(hk, null);
-			}
-			initInstances.swap(j, instIndex);
+	public Instances buildCentroids() {
+		updateMemberShip(instances);
+		updateCentroid(instances);
+		return m_ClusterCentroids;
+	}
 
-			if (m_ClusterCentroids.numInstances() == m_NumClusters) {
-				break;
-			}
-		}
-		m_initialStartPoints = new Instances(m_ClusterCentroids);
-		m_NumClusters = m_ClusterCentroids.numInstances();
-		// removing reference
-		initInstances = null;
-		memberShip = new Matrix(instances.numInstances(), m_NumClusters);
-		m_squaredErrors = new double[m_NumClusters];
-		m_ClusterNominalCounts = new double[m_NumClusters][instances.numAttributes()][0];
-		m_ClusterMissingCounts = new double[m_NumClusters][instances.numAttributes()];
-		startExecutorPool();
-		initMemberShip(instances);
-		double lastFunVal = 0.0d;
-		do {
-			lastFunVal = m_ObjFunValue;
-			updateCentroid(instances);
-			updateMemberShip(instances);
-			calculateObjectiveFunction(instances);
-			if(Math.abs(m_ObjFunValue - lastFunVal) == m_EndValue)break;
-			
-		} while (++m_Iterations < m_MaxIterations);
-		// 更新m_Assignments;
+	public double[] buildClusterErrors() {
+		updateMemberShip(instances);
 		updateClustersInfo(instances);
-		m_executorPool.shutdown();
-		// save memory!
-		m_DistanceFunction.clean();
-
+		return m_squaredErrors;
 	}
 
-	public synchronized void initMemberShip(Instances instances) {
-		memberShip = new Matrix(instances.numInstances(), m_NumClusters);
-		int numPerTask = instances.numInstances() / m_executionSlots;
-		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
-		for (int i = 0; i < m_executionSlots; i++) {
-			int start = i * numPerTask;
-			int end = start + numPerTask;
-			if (i == m_NumClusters - 1) {
-				end = instances.numInstances();
-			}
-			results.add(m_executorPool.submit(new InitMembershipTask(instances, start, end)));
-		}
-		try{
-			for(Future<Boolean> task : results){
-				task.get();
-			}
-		}catch(Exception e){
-			e.printStackTrace();
-		}
-	}
-
-	private class InitMembershipTask implements Callable<Boolean> {
-		protected int start;
-		protected int end;
-
-		public InitMembershipTask(Instances ins, int start, int end) {
-			this.start = start;
-			this.end = end;
-		}
-
-		public Boolean call() {
-			Random rand = new Random();
-			rand.setSeed(m_Seed);
-			for (int i = start; i < end; i++) {
-				double sum = 0d;
-				for (int j = 0; j < m_NumClusters; j++) {
-					double value = 0.01d + rand.nextDouble();
-					memberShip.set(i, j, value);
-					sum += value;
-				}
-				for (int j = 0; j < m_NumClusters; j++) {
-					double value = memberShip.get(i, j) / sum;
-					memberShip.set(i, j, value);
-				}
-			}
-			return true;
-		}
-	}
-
-	private synchronized void updateCentroid(Instances instances) {
-		List<Future<Instance>> results = new ArrayList<Future<Instance>>();
+	public void updateCentroid(Instances instances) {
 		for (int k = 0; k < m_NumClusters; k++) {
-			Future<Instance> task = m_executorPool.submit(new ComputeCentroidTask(instances, k));
-			results.add(task);
-		}
-		m_ClusterCentroids.clear();
-		try {
-			for (Future<Instance> d : results) {
-				m_ClusterCentroids.add(d.get());
-			}
-		} catch (Exception ex) {
-			ex.printStackTrace();
-		}
-	}
-
-	private class ComputeCentroidTask implements Callable<Instance> {
-		protected Instances insts;
-		protected int centroidIndex;
-
-		public ComputeCentroidTask(Instances ins, int centerIndex) {
-			insts = ins;
-			centroidIndex = centerIndex;
-		}
-
-		public Instance call() {
 			double bottom = 0.0d;
-			double[] attributes = new double[insts.numAttributes()];
+			double[] attributes = new double[instances.numAttributes()];
 			Instance in = new DenseInstance(1.0, attributes);
-			for (int i = 0; i < insts.numInstances(); i++) {
-				double uValue = Math.pow(memberShip.get(i, centroidIndex),
-						m_fuzzifier);
+			for (int i = 0; i < instances.numInstances(); i++) {
+				double uValue = Math.pow(memberShip.get(i, k), m_fuzzifier);
 				bottom += uValue;
-				for (int j = 0; j < insts.numAttributes(); j++) {
+				for (int j = 0; j < instances.numAttributes(); j++) {
 					double attValue = in.value(j);
-					attValue += uValue * insts.instance(i).value(j);
+					attValue += uValue * instances.instance(i).value(j);
 					in.setValue(j, attValue);
 				}
 			}
@@ -407,101 +884,45 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 				double attValue = in.value(m);
 				in.setValue(m, attValue / bottom);
 			}
-			return in;
+			m_ClusterCentroids.set(k, in);
 		}
 	}
 
-	private synchronized void updateMemberShip(Instances instances) {
-		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
+	public Matrix updateMemberShip(Instances centroids) {
+		Matrix matrix = new Matrix(instances.numInstances(), m_NumClusters);
 		for (int j = 0; j < m_NumClusters; j++) {
-			results.add(m_executorPool.submit(new ComputeMembershipTask(j, instances)));
-		}
-		try{
-			for(Future<Boolean> task : results){
-				task.get();
-			}
-		}catch(Exception e){
-			e.printStackTrace();
-		}
-	}
-
-	private class ComputeMembershipTask implements Callable<Boolean> {
-		protected int centroidIndex;
-		protected Instances insts;
-
-		public ComputeMembershipTask(int centerIndex, Instances ins) {
-			centroidIndex = centerIndex;
-			insts = ins;
-		}
-
-		public Boolean call() {
-			for (int i = 0; i < insts.numInstances(); i++) {
+			for (int i = 0; i < instances.numInstances(); i++) {
 				double bottom = 0;
-				double top = m_DistanceFunction.distance(insts.instance(i),
-						m_ClusterCentroids.instance(centroidIndex));
+				double top = m_DistanceFunction.distance(instances.instance(i),
+						centroids.instance(j));
 				double sum = 0;
 				for (int k = 0; k < m_NumClusters; k++) {
-					bottom = m_DistanceFunction.distance(insts.instance(i),
-							m_ClusterCentroids.instance(k));
+					bottom = m_DistanceFunction.distance(instances.instance(i),
+							centroids.instance(k));
 					sum += Math.pow(top / bottom, 2.0d / (m_fuzzifier - 1.0));
 				}
-				memberShip.set(i, centroidIndex, 1.0d / sum);
+				matrix.set(i, j, 1.0d / sum);
 			}
-			return true;
 		}
+		return matrix;
 	}
 
-	private synchronized double  calculateObjectiveFunction(Instances instances) {
-		double sum = 0;
-		int numPerTask = instances.numInstances() / m_executionSlots;
-		List<Future<Double>> results = new ArrayList<Future<Double>>();
-		for (int i = 0; i < m_executionSlots; i++) {
-			int start = i * numPerTask;
-			int end = start + numPerTask;
-			if (i == m_NumClusters - 1) {
-				end = instances.numInstances();
+	public double calculateObjectiveFunction(Instances instances) {
+		double sum = 0, dist = 0;
+		for (int i = 0; i < instances.numInstances(); i++) {
+			for (int j = 0; j < m_NumClusters; j++) {
+				dist = m_DistanceFunction.distance(instances.instance(i),
+						m_ClusterCentroids.instance(j));
+				sum += Math.pow(memberShip.get(i, j), m_fuzzifier)
+						* Math.pow(dist, 2);
 			}
-			Future<Double> task = m_executorPool.submit(new ComputeObjectvieFunction(instances, start, end));
-			results.add(task);
 		}
-		try {
-			for (Future<Double> task : results) {
-				sum += task.get().doubleValue();
-			}
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		m_ObjFunValue = sum;
+//		m_ObjFunValue = sum;
 		return sum;
 	}
 
-	private class ComputeObjectvieFunction implements Callable<Double> {
-		protected Instances ins;
-		protected int start;
-		protected int end;
-
-		public ComputeObjectvieFunction(Instances ins, int start, int end) {
-			this.ins = ins;
-			this.start = start;
-			this.end = end;
-		}
-
-		public Double call() {
-			double sum = 0, dist = 0;
-			for (int i = start; i < end; i++) {
-				for (int j = 0; j < m_NumClusters; j++) {
-					dist = m_DistanceFunction.distance(ins.instance(i),
-							m_ClusterCentroids.instance(j));
-					sum += Math.pow(memberShip.get(i, j), m_fuzzifier)
-							* Math.pow(dist, 2);
-				}
-			}
-			return sum;
-		}
-	}
-
-	private void updateClustersInfo(Instances instances) {
+	public void updateClustersInfo(Instances instances) {
+		m_ClusterSizes = new double[m_NumClusters];
 		for (int i = 0; i < m_NumClusters; i++) {
 			mClusters[i] = new Instances(instances, 0);
 		}
@@ -603,9 +1024,9 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 				m_ClusterNominalCounts[centroidIndex][j] = nominalDists[j];
 			}
 		}
-
 		return vals;
 	}
+
 
 	/**
 	 * Returns a string describing this clusterer.
@@ -661,7 +1082,6 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 			throw new Exception("Number of clusters must be > 0");
 		}
 		m_NumClusters = n;
-
 	}
 
 	/**
@@ -1050,12 +1470,6 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 						+ Utils.sum(m_squaredErrors));
 			}
 		}
-		temp.append("\n\nInitial starting points (");
-		temp.append("random");
-		temp.append("):\n");
-		for (int i = 0; i < m_initialStartPoints.numInstances(); i++) {
-			temp.append("Cluster " + i + ": "+ m_initialStartPoints.instance(i)).append("\n");
-		}
 		
 		if (!m_dontReplaceMissing) {
 			temp.append("\nMissing values globally replaced with mean/mode");
@@ -1272,6 +1686,6 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 
 	public static void main(String[] args) {
 		// TODO Auto-generated method stub
-		runClusterer(new FuzzyCMeans(), args);
+		runClusterer(new ABCFCM(), args);
 	}
 }

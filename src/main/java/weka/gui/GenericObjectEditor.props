@@ -271,7 +271,7 @@ weka.clusterers.Clusterer=\
  weka.clusterers.SimpleKMeans,\
   weka.clusterers.KMeans,\
  weka.clusterers.FuzzyCMeans,\
- weka.clusterers.FastFCM,\
+ weka.clusterers.ABCFCM,\
  weka.clusterers.CBFCM,\
  weka.clusterers.BiClustering,\
  weka.clusterers.XMeans
