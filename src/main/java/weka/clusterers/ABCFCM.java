@@ -105,12 +105,6 @@ public class ABCFCM extends RandomizableClusterer implements
 	 * Keep track of the number of iterations completed before convergence. 迭代次数
 	 */
 	protected int m_Iterations = 0;
-
-	/**
-	 * Maximum number of iterations to be executed. 最大迭代次数
-	 */
-	protected int m_MaxIterations = 500;
-
 	/**
 	 * Holds the squared errors for all clusters. 平方误差
 	 */
@@ -120,29 +114,16 @@ public class ABCFCM extends RandomizableClusterer implements
 	protected boolean m_FastDistanceCalc = false;
 
 	/**
-	 * objective function result 目标函数值
-	 */
-	private double m_OFR = 100;
-
-	/**
-	 * a small value used to verify if clustering has converged. 目标函数值改变量范围
-	 */
-	private double m_EndValue = 1e-20;
-	/**
-	 *  objective function value. 目标函数值
-	 */
-	private double m_ObjFunValue = 0;
-	/**
 	 * uij is the degree of membership of xi in the cluster j
 	 */
-	private Matrix memberShip;
+	private Matrix bestMS;
 	
 	private Instances instances;
 
 	/**
 	 * holds the fuzzifier 模糊算子(加权指数)
 	 */
-	private double m_fuzzifier = 3;
+	private double m_fuzzifier = 2;
 
 	/**
 	 * Assignments obtained.(cluster indexes).
@@ -151,23 +132,25 @@ public class ABCFCM extends RandomizableClusterer implements
 	protected int[] m_Assignments = null;
 
 	/** Number of threads to run */
-	protected int m_executionSlots = 3;
+	protected int m_executionSlots = 1;
 
 	/** For parallel execution mode */
 	protected transient ExecutorService m_executorPool;
 	
+	private Matrix[] matrixs;
+	
 	
 	/** The number of colony size (employed bees+onlooker bees) */
-	int NP = 100;
+	int NP = 200;
 	/** The number of food sources equals the half of the colony size */
 	int foodNum = NP / 2;
 	/**
 	 * A food source which could not be improved through "limit" trials is
 	 * abandoned by its employed bee
 	 */
-	int limit = 5;
+	int limit = 20;
 	/** The number of cycles for foraging {a stopping criteria} */
-	int maxCycle = 10;
+	int maxCycle = 100;
 	int mCycle = 0;
 
 	/** Problem specific variables */
@@ -182,7 +165,7 @@ public class ABCFCM extends RandomizableClusterer implements
 	double ub = 1;
 
 	/** Algorithm can be run many times in order to see its robustness */
-	int runtime = 1;
+	int runCount = 1;
 
 	/**
 	 * foods is the population of food sources. Each row of foods matrix is a
@@ -216,19 +199,17 @@ public class ABCFCM extends RandomizableClusterer implements
 
 
 	/** Optimum solution obtained by ABC algorithm */
-	double globalMin = Double.MAX_VALUE;
+	double minObjFunValue = Double.MAX_VALUE;
 	/**
 	 * Holds the squared errors for all clusters. 平方误差
 	 */
 	double squaredError=0;
 
 	/** Parameters of the optimum solution */
-	double globalParams[];
-	/** globalMins holds the globalMin of each run in multiple runs */
-	double globalMins[] = new double[runtime];
-
+	double bestFood[];
 	
-	
+	/** globalMins holds the minObjFunValue of each run in multiple runs */
+	double globalMins[] = new double[runCount];
 
 	public ABCFCM() {
 		m_SeedDefault = 10;
@@ -242,7 +223,6 @@ public class ABCFCM extends RandomizableClusterer implements
 		if (m_executorPool != null) {
 			m_executorPool.shutdownNow();
 		}
-
 		m_executorPool = Executors.newFixedThreadPool(m_executionSlots);
 	}
 
@@ -281,38 +261,46 @@ public class ABCFCM extends RandomizableClusterer implements
 		instances = new Instances(data);
 		init();
 		double mean = 0;
-		for (int run = 0; run < runtime; run++) {
+		for (int run = 0; run < runCount; run++) {
 			initial();
 			memorizeBestSource();
 			for (int iter = 0; iter < maxCycle; iter++) {
 				mCycle = iter+1;
-				sendEmployedBees();
 				calculateProbabilities();
+				memorizeBestSource();
 				sendOnlookerBees();
 				calculateFcm();
 				memorizeBestSource();
 				sendScoutBees();
-				System.out.println("iter="+iter+" globalMin="+globalMin);
+				System.out.println("iter="+iter+" minObjFunValue="+minObjFunValue);
 			}
-			updateClusterInfo();
-			System.out.println("globalMin = "+ globalMin);
+/*			
+			Instances ins = arrayToInstances(bestFood);
+			for(int i=0; i < maxCycle; i++){
+				bestMS = updateMemberShip(ins);
+				m_ClusterCentroids = updateCentroid(bestMS);
+				System.out.println("fcm iter="+i);
+			}
+*/		
+			updateClustersInfo();
+			System.out.println("minObjFunValue = "+ minObjFunValue);
 			System.out.println(toString());
-			globalMins[run] = globalMin;
-			mean = mean + globalMin;
+			globalMins[run] = minObjFunValue;
+			mean = mean + minObjFunValue;
 		}
 		int maxIndex = Utils.maxIndex(globalMins);
 		int minIndex = Utils.minIndex(globalMins);
 		double max = globalMins[maxIndex];
 		double min = globalMins[minIndex];
 
-		mean = mean / runtime;
+		mean = mean / runCount;
 
 		double stdError = 0;
 
-		for (int j = 0; j < runtime; j++) {
+		for (int j = 0; j < runCount; j++) {
 			stdError += Math.pow(globalMins[j] - mean, 2);
 		}
-		stdError /= runtime;
+		stdError /= runCount;
 		System.out.println("maxFunVal=" + max + " minFunVal=" + min + " mean="
 				+ mean + " stdError=" + stdError);
 		
@@ -333,7 +321,10 @@ public class ABCFCM extends RandomizableClusterer implements
 			foods[index][j] = Math.random() * (ub - lb) + lb;
 			solution[j] = foods[index][j];
 		}
-		funVal[index] = calculateFunction(solution);
+		Instances centroids = arrayToInstances(solution);
+		Matrix matrix = updateMemberShip(centroids);
+		matrixs[index] = matrix;
+		funVal[index] = calculateObjectiveFunction(centroids, matrix);
 		fitness[index] = calculateFitness(funVal[index]);
 		trial[index] = 0;
 	}
@@ -351,7 +342,10 @@ public class ABCFCM extends RandomizableClusterer implements
 					foods[i][j] = Math.random() * (ub - lb) + lb;
 					solution[j] = foods[i][j];
 				}
-				funVal[i] = calculateFunction(solution);
+				Instances centroids = arrayToInstances(solution);
+				Matrix matrix = updateMemberShip(centroids);
+				matrixs[i] = matrix;
+				funVal[i] = calculateObjectiveFunction(centroids, matrix);
 				fitness[i] = calculateFitness(funVal[i]);
 				trial[i] = 0;
 			}
@@ -428,7 +422,9 @@ public class ABCFCM extends RandomizableClusterer implements
 		double maxFit = lb;
 		double[] maxNeighbor = null;
 		for(double[] neighbor : neighbors){
-			double objVal = calculateFunction(neighbor);
+			Instances centroids = arrayToInstances(neighbor);
+			Matrix matrix = updateMemberShip(centroids);
+			double objVal = calculateObjectiveFunction(centroids, matrix);
 			double fitness = calculateFitness(objVal);
 			if(maxFit<fitness){
 				maxFit = fitness;
@@ -440,26 +436,26 @@ public class ABCFCM extends RandomizableClusterer implements
 	}
 	/** The best food source is memorized */
 	public void memorizeBestSource() {
-		int k=0;
-		for (int i = 0; i < foodNum; i++) {
-			if (funVal[i] < globalMin) {
-				globalMin = funVal[i];
-				k=i;
-				for (int j = 0; j < dimension; j++)
-					globalParams[j] = foods[i][j];
+		int minIndex = Utils.minIndex(funVal);
+		minObjFunValue = funVal[minIndex];
+		for (int j = 0; j < dimension; j++){
+			bestFood[j] = foods[minIndex][j];
+		}
+		m_ClusterCentroids = arrayToInstances(bestFood);
+		for(int m = 0; m < instances.numInstances();m++){
+			for(int n=0; n < m_NumClusters;n++){
+				bestMS.set(m, n, matrixs[minIndex].get(m, n));
 			}
 		}
+		
 	}
-	public void updateClusterInfo(){
-		int k = Utils.minIndex(funVal);
-		double[] solution = new double[dimension];
-		for(int i=0;i<dimension; i++){
-			solution[i]=foods[k][i];
+	public void print(){
+		for(double val :funVal){
+			System.out.print(val+" ");
 		}
-		m_ClusterCentroids  = arrayToInstances(solution);
-		double[] errors = buildClusterErrors();
-		squaredError = Utils.sum(errors);
+		System.out.println();
 	}
+	
 private class EmployBeeTask implements Callable<Boolean>{
 	private int start;
 	private int end;
@@ -494,7 +490,10 @@ private class EmployBeeTask implements Callable<Boolean>{
 				solution[dj] = lb;
 			if (solution[dj] > ub)
 				solution[dj] = ub;
-			double objValSol = calculateFunction(solution);
+			
+			Instances centroids = arrayToInstances(solution);
+			Matrix matrix = updateMemberShip(centroids);
+			double objValSol = calculateObjectiveFunction(centroids, matrix);
 			double fitnessSol = calculateFitness(objValSol);
 
 			/*
@@ -509,8 +508,16 @@ private class EmployBeeTask implements Callable<Boolean>{
 				 * counter of solution i
 				 * */
 				trial[i] = 0;
-				for (int j = 0; j < dimension; j++)
+				for (int j = 0; j < dimension; j++){
 					foods[i][j] = solution[j];
+				}
+					
+				for(int m = 0; m < instances.numInstances();m++){
+					for(int n=0; n < m_NumClusters;n++){
+						matrixs[i].set(m, n, matrix.get(m, n));
+					}
+				}
+				
 				funVal[i] = objValSol;
 				fitness[i] = fitnessSol;
 			} else {
@@ -543,6 +550,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 			for(Future<Boolean> task : results){
 				task.get();
 			}
+			print();
 		}catch(Exception e){
 			e.printStackTrace();
 		}
@@ -580,7 +588,6 @@ private class EmployBeeTask implements Callable<Boolean>{
 					}
 					double[] bestNeighbor = calculateNeighborBest(start);
 					int minFIndex = Utils.minIndex(funVal);
-					
 					/* v_{ij}=x_{ij}+\phi_{ij}*(x_{kj}-x_{ij}) */
 					
 					double r = rand.nextDouble()-1;
@@ -596,7 +603,9 @@ private class EmployBeeTask implements Callable<Boolean>{
 						solution[end] = lb;
 					if (solution[end] > ub)
 						solution[end] = ub;
-					double objValSol = calculateFunction(solution);
+					Instances centroids = arrayToInstances(solution);
+					Matrix matrix = updateMemberShip(centroids);
+					double objValSol = calculateObjectiveFunction(centroids, matrix);
 					double fitnessSol = calculateFitness(objValSol);
 
 					/*
@@ -610,8 +619,15 @@ private class EmployBeeTask implements Callable<Boolean>{
 						 * reset the trial counter of solution i
 						 */
 						trial[start] = 0;
-						for (int j = 0; j < dimension; j++)
+						for (int j = 0; j < dimension; j++){
 							foods[start][j] = solution[j];
+						}
+							
+						for(int m = 0; m < instances.numInstances();m++){
+							for(int n=0; n < m_NumClusters;n++){
+								matrixs[start].set(m, n, matrix.get(m, n));
+							}
+						}
 						funVal[start] = objValSol;
 						fitness[start] = fitnessSol;
 					} else {
@@ -668,6 +684,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 			for(Future<Boolean> task : results){
 				task.get();
 			}
+			print();
 		}catch(Exception e){
 			e.printStackTrace();
 		}
@@ -713,22 +730,11 @@ private class EmployBeeTask implements Callable<Boolean>{
 				for (int u = 0; u < dimension; u++){
 					solution[u] = foods[i][u];
 				}
-				int k =0;
-				m_ClusterCentroids  = arrayToInstances(solution);
-				Instances ins =buildCentroids();
-				for(int ii =0; ii<ins.numInstances();ii++){
-					Instance in = ins.get(ii);
-					for(int jj = 0;jj<in.numAttributes();jj++){
-						solution[k++]=in.value(jj);
-					}
-				}
-	/*
-				if (solution[param2change] < lb)
-					solution[param2change] = lb;
-				if (solution[param2change] > ub)
-					solution[param2change] = ub;
-		*/
-				double objValSol = calculateFunction(solution);
+				Instances centroids = arrayToInstances(solution);
+				Matrix matrix = updateMemberShip(centroids);
+				centroids = updateCentroid(matrix);
+				matrix = updateMemberShip(centroids);
+				double objValSol = calculateObjectiveFunction(centroids, matrix);
 				double fitnessSol = calculateFitness(objValSol);
 
 				/*
@@ -743,8 +749,16 @@ private class EmployBeeTask implements Callable<Boolean>{
 					 * counter of solution i
 					 * */
 					trial[i] = 0;
-					for (int j = 0; j < dimension; j++)
-						foods[i][j] = solution[j];
+					double[] newSolution = instancesToArray(centroids);
+					for (int j = 0; j < dimension; j++){
+						foods[i][j] = newSolution[j];
+					}
+						
+					for(int m = 0; m < instances.numInstances();m++){
+						for(int n=0; n < m_NumClusters;n++){
+							matrixs[i].set(m, n, matrix.get(m, n));
+						}
+					}
 					funVal[i] = objValSol;
 					fitness[i] = fitnessSol;
 				} else {
@@ -773,22 +787,21 @@ private class EmployBeeTask implements Callable<Boolean>{
 			for(Future<Boolean> task : results){
 				task.get();
 			}
+			print();
 		}catch(Exception e){
 			e.printStackTrace();
 		}
 	}
-	
-	/**
-	 * calculate function value
-	 * 
-	 * @param sol
-	 * @return
-	 */
-	public  double  calculateFunction(double sol[]) {
-		Instances centroids = arrayToInstances(sol);
-		double funVal = buildModel(centroids);
-		return funVal;
-
+	public double[] instancesToArray(Instances centroids) {
+		
+		double[] value = new double[dimension];
+		int index =0;
+		for(Instance ins : centroids){
+			for(int i = 0; i<ins.numAttributes();i++){
+				value[index++]=ins.value(i);
+			}
+		}
+		return value;
 	}
 	public Instances arrayToInstances(double sol[]) {
 		int count = 0;
@@ -806,10 +819,13 @@ private class EmployBeeTask implements Callable<Boolean>{
 	public void init() {
 		dimension = instances.numAttributes()*m_NumClusters;
 		foods = new double[foodNum][dimension];
-		globalParams = new double[dimension];
-		
+		bestFood = new double[dimension];
+		matrixs = new Matrix[foodNum];
+		for(Matrix matrix: matrixs){
+			matrix = new Matrix(instances.numInstances(), m_NumClusters);
+		}
 		m_DistanceFunction.setInstances(instances);
-		memberShip = new Matrix(instances.numInstances(), m_NumClusters);
+		bestMS = new Matrix(instances.numInstances(), m_NumClusters);
 		mClusters = new Instances[m_NumClusters];
 		m_Assignments = new int[instances.numInstances()];
 		m_squaredErrors = new double[m_NumClusters];
@@ -848,31 +864,14 @@ private class EmployBeeTask implements Callable<Boolean>{
 				.numAttributes()];
 	}
 
-	public double buildModel(Instances centroids) {
-		Matrix matrix = updateMemberShip(centroids);
-		double funVal = calculateObjectiveFunction(centroids);
-		return funVal;
-	}
-
-	public Instances buildCentroids() {
-		updateMemberShip(instances);
-		updateCentroid(instances);
-		return m_ClusterCentroids;
-	}
-
-	public double[] buildClusterErrors() {
-		updateMemberShip(instances);
-		updateClustersInfo(instances);
-		return m_squaredErrors;
-	}
-
-	public void updateCentroid(Instances instances) {
+	public Instances updateCentroid(Matrix matrix) {
+		Instances centroids = new Instances(instances,0);
 		for (int k = 0; k < m_NumClusters; k++) {
 			double bottom = 0.0d;
 			double[] attributes = new double[instances.numAttributes()];
 			Instance in = new DenseInstance(1.0, attributes);
 			for (int i = 0; i < instances.numInstances(); i++) {
-				double uValue = Math.pow(memberShip.get(i, k), m_fuzzifier);
+				double uValue = Math.pow(matrix.get(i, k), m_fuzzifier);
 				bottom += uValue;
 				for (int j = 0; j < instances.numAttributes(); j++) {
 					double attValue = in.value(j);
@@ -884,8 +883,9 @@ private class EmployBeeTask implements Callable<Boolean>{
 				double attValue = in.value(m);
 				in.setValue(m, attValue / bottom);
 			}
-			m_ClusterCentroids.set(k, in);
+			centroids.add(in);
 		}
+		return centroids;
 	}
 
 	public Matrix updateMemberShip(Instances centroids) {
@@ -907,21 +907,20 @@ private class EmployBeeTask implements Callable<Boolean>{
 		return matrix;
 	}
 
-	public double calculateObjectiveFunction(Instances instances) {
+	public double calculateObjectiveFunction(Instances centroids,Matrix matrix) {
 		double sum = 0, dist = 0;
 		for (int i = 0; i < instances.numInstances(); i++) {
 			for (int j = 0; j < m_NumClusters; j++) {
 				dist = m_DistanceFunction.distance(instances.instance(i),
-						m_ClusterCentroids.instance(j));
-				sum += Math.pow(memberShip.get(i, j), m_fuzzifier)
+						centroids.instance(j));
+				sum += Math.pow(matrix.get(i, j), m_fuzzifier)
 						* Math.pow(dist, 2);
 			}
 		}
-//		m_ObjFunValue = sum;
 		return sum;
 	}
 
-	public void updateClustersInfo(Instances instances) {
+	public void updateClustersInfo() {
 		m_ClusterSizes = new double[m_NumClusters];
 		for (int i = 0; i < m_NumClusters; i++) {
 			mClusters[i] = new Instances(instances, 0);
@@ -935,8 +934,8 @@ private class EmployBeeTask implements Callable<Boolean>{
 			int index = 0;
 			double dist = 0f;
 			for (int j = 0; j < m_NumClusters; j++) {
-				if (max < memberShip.get(i, j)) {
-					max = memberShip.get(i, j);
+				if (max < bestMS.get(i, j)) {
+					max = bestMS.get(i, j);
 					index = j;
 				}
 			}
@@ -1118,7 +1117,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 		if (n <= 0) {
 			throw new Exception("Maximum number of iterations must be > 0");
 		}
-		m_MaxIterations = n;
+		maxCycle = n;
 	}
 
 	/**
@@ -1127,7 +1126,26 @@ private class EmployBeeTask implements Callable<Boolean>{
 	 * @return the number of clusters to generate
 	 */
 	public int getMaxIterations() {
-		return m_MaxIterations;
+		return maxCycle;
+	}
+	public void setRunCount(int n) throws Exception {
+		if (n <= 0) {
+			throw new Exception("run count be >=1");
+		}
+		runCount = n;
+	}
+	public int getRunCount() {
+		return runCount;
+	}
+	
+	public void setLimit(int n) throws Exception {
+		if (n <= 0) {
+			throw new Exception("limit count be >=1");
+		}
+		limit = n;
+	}
+	public int getLimit() {
+		return limit;
 	}
 	
 	public void setFuzzifier(double val){
@@ -1301,6 +1319,14 @@ private class EmployBeeTask implements Callable<Boolean>{
 		if (optionString.length() != 0) {
 			setMaxIterations(Integer.parseInt(optionString));
 		}
+		optionString = Utils.getOption("R", options);
+		if (optionString.length() != 0) {
+			setRunCount(Integer.parseInt(optionString));
+		}
+		optionString = Utils.getOption("L", options);
+		if (optionString.length() != 0) {
+			setLimit(Integer.parseInt(optionString));
+		}
 		optionString = Utils.getOption("F", options);
 		if (optionString.length() != 0) {
 			setFuzzifier(Double.parseDouble(optionString));
@@ -1331,6 +1357,10 @@ private class EmployBeeTask implements Callable<Boolean>{
 
 		result.add("-I");
 		result.add("" + getMaxIterations());
+		result.add("-R");
+		result.add("" + getRunCount());
+		result.add("-L");
+		result.add("" + getLimit());
 		
 		result.add("F");
 		result.add("" + getFuzzifier());
@@ -1457,7 +1487,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 			maxWidth = "missing".length() + 1;
 		}
 		StringBuffer temp = new StringBuffer();
-		temp.append("\nFuzzyCMeans\n======\n");
+		temp.append("\nABCFCM\n======\n");
 		temp.append("\nNumber of iterations: " + m_Iterations);
 		temp.append("\tthe seed: " + m_Seed);
 		if (!m_FastDistanceCalc) {
@@ -1474,7 +1504,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 		if (!m_dontReplaceMissing) {
 			temp.append("\nMissing values globally replaced with mean/mode");
 		}
-		temp.append("\nobjFunValue="+m_ObjFunValue);
+		temp.append("\nobjFunValue="+minObjFunValue);
 		temp.append("\n");
 		temp.append("\n\nFinal cluster centroids:\n");
 		temp.append(pad("Cluster#", " ", (maxAttWidth + (maxWidth * 2 + 2))

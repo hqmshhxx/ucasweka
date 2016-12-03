@@ -186,7 +186,7 @@ public class NeuralNode
   }
 
   /**
-   * call this function to get the chnage in weights array.
+   * call this function to get the change in weights array.
    * This will also allow the change in weights to be updated.
    * @return The change in weights array.
    */
