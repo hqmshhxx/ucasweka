@@ -244,21 +244,21 @@ weka.classifiers.Classifier=\
  weka.classifiers.rules.ZeroR
 
 # Lists the AbstractOutput classes I want to choose from
-weka.classifiers.evaluation.output.prediction.AbstractOutput=\
+  weka.classifiers.evaluation.output.prediction.AbstractOutput=\
   weka.classifiers.evaluation.output.prediction.CSV,\
   weka.classifiers.evaluation.output.prediction.HTML,\
   weka.classifiers.evaluation.output.prediction.Null,\
   weka.classifiers.evaluation.output.prediction.PlainText
  
 # Lists the DistanceFunctions I want to choose from
-weka.core.DistanceFunction=\
+ weka.core.DistanceFunction=\
  weka.core.ChebyshevDistance,\
  weka.core.EditDistance,\
  weka.core.EuclideanDistance,\
  weka.core.ManhattanDistance
  
 # Lists the Clusterers I want to choose from
-weka.clusterers.Clusterer=\
+ weka.clusterers.Clusterer=\
  weka.clusterers.CLOPE,\
  weka.clusterers.Cobweb,\
  weka.clusterers.DBScan,\
@@ -274,7 +274,7 @@ weka.clusterers.Clusterer=\
  weka.clusterers.XMeans
  
 # Lists the UnsupervisedFilters I want to choose from
-weka.filters.UnsupervisedFilter=\
+ weka.filters.UnsupervisedFilter=\
  weka.filters.unsupervised.attribute.Add,\
  weka.filters.unsupervised.attribute.AddCluster,\
  weka.filters.unsupervised.attribute.AddExpression,\

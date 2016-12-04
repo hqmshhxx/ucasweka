@@ -218,8 +218,6 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		m_Iterations = 0;
 		m_ReplaceMissingFilter = new ReplaceMissingValues();
 		Instances instances = new Instances(data);
-//		instances.setClassIndex(-1);
-		System.out.println("instances class index = "+ instances.classIndex());
 		if (!m_dontReplaceMissing) {
 			m_ReplaceMissingFilter.setInputFormat(instances);
 			instances = Filter.useFilter(instances, m_ReplaceMissingFilter);
