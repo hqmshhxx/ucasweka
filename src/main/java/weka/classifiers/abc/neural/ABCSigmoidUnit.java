@@ -18,7 +18,7 @@
  *    Copyright (C) 2001-2012 University of Waikato, Hamilton, New Zealand
  */
 
-package weka.classifiers.functions.neural;
+package weka.classifiers.abc.neural;
 
 import weka.core.RevisionHandler;
 import weka.core.RevisionUtils;
@@ -30,20 +30,20 @@ import weka.core.RevisionUtils;
  * @author Malcolm Ware (mfw4@cs.waikato.ac.nz)
  * @version $Revision: 8034 $
  */
-public class SigmoidUnit
-  implements NeuralMethod, RevisionHandler {
+public class ABCSigmoidUnit
+  implements ABCNeuralMethod, RevisionHandler {
 
-  /** for serialization */
-  private static final long serialVersionUID = -5162958458177475652L;
   
-  /**
+  private static final long serialVersionUID = 3810556443213102909L;
+
+/**
    * This function calculates what the output value should be.
    * @param node The node to calculate the value for.
    * @return The value.
    */
-  public double outputValue(NeuralNode node) {
+  public double outputValue(ABCNeuralNode node) {
     double[] weights = node.getWeights();
-    NeuralConnection[] inputs = node.getInputs();
+    ABCNeuralConnection[] inputs = node.getInputs();
     double value = weights[0];
     for (int noa = 0; noa < node.getNumInputs(); noa++) {
       value += inputs[noa].outputValue(true) * weights[noa+1];
@@ -68,10 +68,10 @@ public class SigmoidUnit
    * @param node The node to calculate the error for.
    * @return The error.
    */
-  public double errorValue(NeuralNode node) {
+  public double errorValue(ABCNeuralNode node) {
     //then calculate the error.
     
-    NeuralConnection[] outputs = node.getOutputs();
+    ABCNeuralConnection[] outputs = node.getOutputs();
     int[] oNums = node.getOutputNums();
     double error = 0;
     
@@ -91,9 +91,9 @@ public class SigmoidUnit
    * @param learn The learning rate to use.
    * @param momentum The momentum to use.
    */
-  public void updateWeights(NeuralNode node, double learn, double momentum) {
+  public void updateWeights(ABCNeuralNode node, double learn, double momentum) {
 
-    NeuralConnection[] inputs = node.getInputs();
+    ABCNeuralConnection[] inputs = node.getInputs();
     double[] cWeights = node.getChangeInWeights();
     double[] weights = node.getWeights();
     double learnTimesError = 0;

@@ -18,7 +18,7 @@
  *    Copyright (C) 2000-2012 University of Waikato, Hamilton, New Zealand
  */
 
-package weka.classifiers.functions;
+package weka.classifiers.abc;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -50,12 +50,13 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 
+
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
-import weka.classifiers.functions.neural.LinearUnit;
-import weka.classifiers.functions.neural.NeuralConnection;
-import weka.classifiers.functions.neural.NeuralNode;
-import weka.classifiers.functions.neural.SigmoidUnit;
+import weka.classifiers.abc.neural.ABCLinearUnit;
+import weka.classifiers.abc.neural.ABCNeuralConnection;
+import weka.classifiers.abc.neural.ABCNeuralNode;
+import weka.classifiers.abc.neural.ABCSigmoidUnit;
 import weka.core.*;
 import weka.core.Capabilities.Capability;
 import weka.filters.Filter;
@@ -168,7 +169,7 @@ import weka.filters.unsupervised.attribute.NominalToBinary;
  * @author Malcolm Ware (mfw4@cs.waikato.ac.nz)
  * @version $Revision: 12449 $
  */
-public class MultilayerPerceptron extends AbstractClassifier implements
+public class BP extends AbstractClassifier implements
   OptionHandler, WeightedInstancesHandler, Randomizable {
 
   /** for serialization */
@@ -180,7 +181,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
    * @param argv should contain command line options (see setOptions)
    */
   public static void main(String[] argv) {
-    runClassifier(new MultilayerPerceptron(), argv);
+    runClassifier(new BP(), argv);
   }
 
   /**
@@ -189,12 +190,12 @@ public class MultilayerPerceptron extends AbstractClassifier implements
    * suitable to go on the attribute side or class side of the network and not
    * both.
    */
-  protected class NeuralEnd extends NeuralConnection {
+  protected class ABCNeuralEnd extends ABCNeuralConnection {
 
-    /** for serialization */
-    static final long serialVersionUID = 7305185603191183338L;
+   
+	private static final long serialVersionUID = -4602263957903187240L;
 
-    /**
+	/**
      * the value that represents the instance value this node represents. For an
      * input it is the attribute number, for an output, if nominal it is the
      * class value.
@@ -207,7 +208,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     /**
      * Constructor
      */
-    public NeuralEnd(String id) {
+    public ABCNeuralEnd(String id) {
       super(id);
 
       m_link = 0;
@@ -451,6 +452,12 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     public String getRevision() {
       return RevisionUtils.extract("$Revision: 12449 $");
     }
+
+	@Override
+	public void setWeights(double[] weights) {
+		// TODO Auto-generated method stub
+		
+	}
   }
 
   /**
@@ -482,7 +489,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
             int y = e.getY();
             int w = NodePanel.this.getWidth();
             int h = NodePanel.this.getHeight();
-            ArrayList<NeuralConnection> tmp = new ArrayList<NeuralConnection>(4);
+            ArrayList<ABCNeuralConnection> tmp = new ArrayList<ABCNeuralConnection>(4);
             for (int noa = 0; noa < m_numAttributes; noa++) {
               if (m_inputs[noa].onUnit(g, x, y, w, h)) {
                 tmp.add(m_inputs[noa]);
@@ -503,7 +510,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
                 return;
               }
             }
-            for (NeuralConnection m_neuralNode : m_neuralNodes) {
+            for (ABCNeuralConnection m_neuralNode : m_neuralNodes) {
               if (m_neuralNode.onUnit(g, x, y, w, h)) {
                 tmp.add(m_neuralNode);
                 selection(
@@ -514,7 +521,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
               }
 
             }
-            NeuralNode temp = new NeuralNode(String.valueOf(m_nextId),
+            ABCNeuralNode temp = new ABCNeuralNode(String.valueOf(m_nextId),
               m_random, m_sigmoidUnit);
             m_nextId++;
             temp.setX((double) e.getX() / w);
@@ -532,7 +539,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
             int y = e.getY();
             int w = NodePanel.this.getWidth();
             int h = NodePanel.this.getHeight();
-            ArrayList<NeuralConnection> tmp = new ArrayList<NeuralConnection>(4);
+            ArrayList<ABCNeuralConnection> tmp = new ArrayList<ABCNeuralConnection>(4);
             for (int noa = 0; noa < m_numAttributes; noa++) {
               if (m_inputs[noa].onUnit(g, x, y, w, h)) {
                 tmp.add(m_inputs[noa]);
@@ -554,7 +561,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
                 return;
               }
             }
-            for (NeuralConnection m_neuralNode : m_neuralNodes) {
+            for (ABCNeuralConnection m_neuralNode : m_neuralNodes) {
               if (m_neuralNode.onUnit(g, x, y, w, h)) {
                 tmp.add(m_neuralNode);
                 selection(
@@ -583,7 +590,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
      * @param ctrl True if ctrl was held down.
      * @param left True if it was the left mouse button.
      */
-    private void selection(ArrayList<NeuralConnection> v, boolean ctrl,
+    private void selection(ArrayList<ABCNeuralConnection> v, boolean ctrl,
       boolean left) {
 
       if (v == null) {
@@ -618,7 +625,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
         // then connect the current selection to the new one.
         for (int noa = 0; noa < m_selected.size(); noa++) {
           for (int nob = 0; nob < v.size(); nob++) {
-            NeuralConnection.connect(m_selected.get(noa), v.get(nob));
+            ABCNeuralConnection.connect(m_selected.get(noa), v.get(nob));
           }
         }
       } else if (m_selected.size() > 0) {
@@ -626,9 +633,9 @@ public class MultilayerPerceptron extends AbstractClassifier implements
 
         for (int noa = 0; noa < m_selected.size(); noa++) {
           for (int nob = 0; nob < v.size(); nob++) {
-            NeuralConnection.disconnect(m_selected.get(noa), v.get(nob));
+            ABCNeuralConnection.disconnect(m_selected.get(noa), v.get(nob));
 
-            NeuralConnection.disconnect(v.get(nob), m_selected.get(noa));
+            ABCNeuralConnection.disconnect(v.get(nob), m_selected.get(noa));
 
           }
         }
@@ -671,7 +678,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
         m_outputs[noa].drawInputLines(g, x, y);
         m_outputs[noa].drawOutputLines(g, x, y);
       }
-      for (NeuralConnection m_neuralNode : m_neuralNodes) {
+      for (ABCNeuralConnection m_neuralNode : m_neuralNodes) {
         m_neuralNode.drawInputLines(g, x, y);
       }
       for (int noa = 0; noa < m_numAttributes; noa++) {
@@ -680,7 +687,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
       for (int noa = 0; noa < m_numClasses; noa++) {
         m_outputs[noa].drawNode(g, x, y);
       }
-      for (NeuralConnection m_neuralNode : m_neuralNodes) {
+      for (ABCNeuralConnection m_neuralNode : m_neuralNodes) {
         m_neuralNode.drawNode(g, x, y);
       }
 
@@ -932,13 +939,13 @@ public class MultilayerPerceptron extends AbstractClassifier implements
   private double[] m_attributeBases;
 
   /** The output units.(only feeds the errors, does no calcs) */
-  private NeuralEnd[] m_outputs;
+  private ABCNeuralEnd[] m_outputs;
 
   /** The input units.(only feeds the inputs does no calcs) */
-  private NeuralEnd[] m_inputs;
+  private ABCNeuralEnd[] m_inputs;
 
   /** All the nodes that actually comprise the logical neural net. */
-  private NeuralConnection[] m_neuralNodes;
+  private ABCNeuralConnection[] m_neuralNodes;
 
   /** The number of classes. */
   private int m_numClasses = 0;
@@ -956,7 +963,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
   private int m_nextId;
 
   /** A Vector list of the units currently selected. */
-  private ArrayList<NeuralConnection> m_selected;
+  private ArrayList<ABCNeuralConnection> m_selected;
 
   /** The number of epochs to train through. */
   private int m_numEpochs;
@@ -1044,17 +1051,17 @@ public class MultilayerPerceptron extends AbstractClassifier implements
   /**
    * this is a sigmoid unit.
    */
-  private final SigmoidUnit m_sigmoidUnit;
+  private final ABCSigmoidUnit m_sigmoidUnit;
 
   /**
    * This is a linear unit.
    */
-  private final LinearUnit m_linearUnit;
+  private final ABCLinearUnit m_linearUnit;
 
   /**
    * The constructor.
    */
-  public MultilayerPerceptron() {
+  public BP() {
     m_instances = null;
     m_currentInstance = null;
     m_controlPanel = null;
@@ -1062,12 +1069,12 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     m_epoch = 0;
     m_error = 0;
 
-    m_outputs = new NeuralEnd[0];
-    m_inputs = new NeuralEnd[0];
+    m_outputs = new ABCNeuralEnd[0];
+    m_inputs = new ABCNeuralEnd[0];
     m_numAttributes = 0;
     m_numClasses = 0;
-    m_neuralNodes = new NeuralConnection[0];
-    m_selected = new ArrayList<NeuralConnection>(4);
+    m_neuralNodes = new ABCNeuralConnection[0];
+    m_selected = new ArrayList<ABCNeuralConnection>(4);
     m_nextId = 0;
     m_stopIt = true;
     m_stopped = true;
@@ -1075,8 +1082,8 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     m_numeric = false;
     m_random = null;
     m_nominalToBinaryFilter = new NominalToBinary();
-    m_sigmoidUnit = new SigmoidUnit();
-    m_linearUnit = new LinearUnit();
+    m_sigmoidUnit = new ABCSigmoidUnit();
+    m_linearUnit = new ABCLinearUnit();
     // setting all the options to their defaults. To completely change these
     // defaults they will also need to be changed down the bottom in the
     // setoptions function (the text info in the accompanying functions should
@@ -1410,9 +1417,9 @@ public class MultilayerPerceptron extends AbstractClassifier implements
    * 
    * @param n The node to place in the list.
    */
-  private void addNode(NeuralConnection n) {
+  private void addNode(ABCNeuralConnection n) {
 
-    NeuralConnection[] temp1 = new NeuralConnection[m_neuralNodes.length + 1];
+    ABCNeuralConnection[] temp1 = new ABCNeuralConnection[m_neuralNodes.length + 1];
     for (int noa = 0; noa < m_neuralNodes.length; noa++) {
       temp1[noa] = m_neuralNodes[noa];
     }
@@ -1428,8 +1435,8 @@ public class MultilayerPerceptron extends AbstractClassifier implements
    * @param n The neuralConnection to remove.
    * @return True if removed false if not (because it wasn't there).
    */
-  private boolean removeNode(NeuralConnection n) {
-    NeuralConnection[] temp1 = new NeuralConnection[m_neuralNodes.length - 1];
+  private boolean removeNode(ABCNeuralConnection n) {
+    ABCNeuralConnection[] temp1 = new ABCNeuralConnection[m_neuralNodes.length - 1];
     int skip = 0;
     for (int noa = 0; noa < m_neuralNodes.length; noa++) {
       if (n == m_neuralNodes[noa]) {
@@ -1597,11 +1604,11 @@ public class MultilayerPerceptron extends AbstractClassifier implements
    * This creates the required input units.
    */
   private void setupInputs() throws Exception {
-    m_inputs = new NeuralEnd[m_numAttributes];
+    m_inputs = new ABCNeuralEnd[m_numAttributes];
     int now = 0;
     for (int noa = 0; noa < m_numAttributes + 1; noa++) {
       if (m_instances.classIndex() != noa) {
-        m_inputs[noa - now] = new NeuralEnd(m_instances.attribute(noa).name());
+        m_inputs[noa - now] = new ABCNeuralEnd(m_instances.attribute(noa).name());
 
         m_inputs[noa - now].setX(.1);
         m_inputs[noa - now].setY((noa - now + 1.0) / (m_numAttributes + 1));
@@ -1618,24 +1625,24 @@ public class MultilayerPerceptron extends AbstractClassifier implements
    */
   private void setupOutputs() throws Exception {
 
-    m_outputs = new NeuralEnd[m_numClasses];
+    m_outputs = new ABCNeuralEnd[m_numClasses];
     for (int noa = 0; noa < m_numClasses; noa++) {
       if (m_numeric) {
-        m_outputs[noa] = new NeuralEnd(m_instances.classAttribute().name());
+        m_outputs[noa] = new ABCNeuralEnd(m_instances.classAttribute().name());
       } else {
-        m_outputs[noa] = new NeuralEnd(m_instances.classAttribute().value(noa));
+        m_outputs[noa] = new ABCNeuralEnd(m_instances.classAttribute().value(noa));
       }
 
       m_outputs[noa].setX(.9);
       m_outputs[noa].setY((noa + 1.0) / (m_numClasses + 1));
       m_outputs[noa].setLink(false, noa);
-      NeuralNode temp = new NeuralNode(String.valueOf(m_nextId), m_random,
+      ABCNeuralNode temp = new ABCNeuralNode(String.valueOf(m_nextId), m_random,
         m_sigmoidUnit);
       m_nextId++;
       temp.setX(.75);
       temp.setY((noa + 1.0) / (m_numClasses + 1));
       addNode(temp);
-      NeuralConnection.connect(temp, m_outputs[noa]);
+      ABCNeuralConnection.connect(temp, m_outputs[noa]);
     }
 
   }
@@ -1666,7 +1673,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
         val = Double.valueOf(c).intValue();
       }
       for (int nob = 0; nob < val; nob++) {
-        NeuralNode temp = new NeuralNode(String.valueOf(m_nextId), m_random,
+        ABCNeuralNode temp = new ABCNeuralNode(String.valueOf(m_nextId), m_random,
           m_sigmoidUnit);
         m_nextId++;
         temp.setX(.5 / (num) * noa + .25);
@@ -1676,7 +1683,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
           // then do connections
           for (int noc = m_neuralNodes.length - nob - 1 - prev; noc < m_neuralNodes.length
             - nob - 1; noc++) {
-            NeuralConnection.connect(m_neuralNodes[noc], temp);
+            ABCNeuralConnection.connect(m_neuralNodes[noc], temp);
           }
         }
       }
@@ -1699,18 +1706,18 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     if (val == 0) {
       for (int noa = 0; noa < m_numAttributes; noa++) {
         for (int nob = 0; nob < m_numClasses; nob++) {
-          NeuralConnection.connect(m_inputs[noa], m_neuralNodes[nob]);
+          ABCNeuralConnection.connect(m_inputs[noa], m_neuralNodes[nob]);
         }
       }
     } else {
       for (int noa = 0; noa < m_numAttributes; noa++) {
         for (int nob = m_numClasses; nob < m_numClasses + val; nob++) {
-          NeuralConnection.connect(m_inputs[noa], m_neuralNodes[nob]);
+          ABCNeuralConnection.connect(m_inputs[noa], m_neuralNodes[nob]);
         }
       }
       for (int noa = m_neuralNodes.length - prev; noa < m_neuralNodes.length; noa++) {
         for (int nob = 0; nob < m_numClasses; nob++) {
-          NeuralConnection.connect(m_neuralNodes[noa], m_neuralNodes[nob]);
+          ABCNeuralConnection.connect(m_neuralNodes[noa], m_neuralNodes[nob]);
         }
       }
     }
@@ -1723,11 +1730,11 @@ public class MultilayerPerceptron extends AbstractClassifier implements
    * will be set to be sigmoid units.
    */
   private void setEndsToLinear() {
-    for (NeuralConnection m_neuralNode : m_neuralNodes) {
-      if ((m_neuralNode.getType() & NeuralConnection.OUTPUT) == NeuralConnection.OUTPUT) {
-        ((NeuralNode) m_neuralNode).setMethod(m_linearUnit);
+    for (ABCNeuralConnection m_neuralNode : m_neuralNodes) {
+      if ((m_neuralNode.getType() & ABCNeuralConnection.OUTPUT) == ABCNeuralConnection.OUTPUT) {
+        ((ABCNeuralNode) m_neuralNode).setMethod(m_linearUnit);
       } else {
-        ((NeuralNode) m_neuralNode).setMethod(m_sigmoidUnit);
+        ((ABCNeuralNode) m_neuralNode).setMethod(m_sigmoidUnit);
       }
     }
   }
@@ -1757,6 +1764,97 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     return result;
   }
 
+  public void buildNetwork(Instances i)throws Exception {
+	  
+	  i.setClassIndex(i.numAttributes()-1);
+	  // can classifier handle the data?
+	    getCapabilities().testWithFail(i);
+
+	    // remove instances with missing class
+	    i = new Instances(i);
+	    i.deleteWithMissingClass();
+
+	    m_ZeroR = new weka.classifiers.rules.ZeroR();
+	    m_ZeroR.buildClassifier(i);
+	    // only class? -> use ZeroR model
+	    if (i.numAttributes() == 1) {
+	      System.err
+	        .println("Cannot build model (only class attribute present in data!), "
+	          + "using ZeroR model instead!");
+	      m_useDefaultModel = true;
+	      return;
+	    } else {
+	      m_useDefaultModel = false;
+	    }
+
+	    m_epoch = 0;
+	    m_error = 0;
+	    m_instances = null;
+	    m_currentInstance = null;
+	    m_controlPanel = null;
+	    m_nodePanel = null;
+
+	    m_outputs = new ABCNeuralEnd[0];
+	    m_inputs = new ABCNeuralEnd[0];
+	    m_numAttributes = 0;
+	    m_numClasses = 0;
+	    m_neuralNodes = new ABCNeuralConnection[0];
+
+	    m_selected = new ArrayList<ABCNeuralConnection>(4);
+	    m_nextId = 0;
+	    m_stopIt = true;
+	    m_stopped = true;
+	    m_accepted = false;
+	    m_instances = new Instances(i);
+	    m_random = new Random(m_randomSeed);
+	    m_instances.randomize(m_random);
+
+	    if (m_useNomToBin) {
+	      m_nominalToBinaryFilter = new NominalToBinary();
+	      m_nominalToBinaryFilter.setInputFormat(m_instances);
+	      m_instances = Filter.useFilter(m_instances, m_nominalToBinaryFilter);
+	    }
+	    m_numAttributes = m_instances.numAttributes() - 1;
+	    m_numClasses = m_instances.numClasses();
+
+	    setClassType(m_instances);
+
+
+	    setupInputs();
+
+	    setupOutputs();
+	    if (m_autoBuild) {
+	      setupHiddenLayer();
+	    }
+  }
+  public void initWeights(double[] weights){
+	  int hlNum = Integer.parseInt(m_hiddenLayers);
+	  int ipNum = m_numAttributes;
+	  int opNum = m_numClasses;
+	  System.out.println(ipNum+"x"+hlNum+"x"+opNum);
+	  int opdelta = ipNum*hlNum+hlNum+hlNum*opNum;
+	  int opwgt = ipNum*hlNum+hlNum;
+	  int hldelta = ipNum*hlNum;
+	  int hlwgt = 0;
+	  for(int opi=0; opi<opNum; opi++){
+		  double[] opiWeights = new double[hlNum+1];
+		  opiWeights[0]=weights[opdelta+opi];
+		  for(int k=1;k<hlNum+1; k++){
+			  System.out.println("opwgt = "+opwgt);
+			  opiWeights[k]=weights[opwgt++];
+		  }
+		  m_neuralNodes[opi].setWeights(opiWeights);
+	  }
+	  for(int ipi=0; ipi<ipNum; ipi++){
+		  double[] ipiWeights = new double[ipNum+1];
+		  ipiWeights[0]=weights[hldelta+ipi];
+		  for(int k=1; k<ipNum+1; k++){
+			  System.out.println("hlwgt = "+hlwgt);
+			  ipiWeights[k]=weights[hlwgt++];
+		  }
+		  m_neuralNodes[opNum+ipi].setWeights(ipiWeights);
+	  }
+  }
   /**
    * Call this function to build and train a neural network for the training
    * data provided.
@@ -1767,78 +1865,16 @@ public class MultilayerPerceptron extends AbstractClassifier implements
   @Override
   public void buildClassifier(Instances i) throws Exception {
 
-    // can classifier handle the data?
-    getCapabilities().testWithFail(i);
-
-    // remove instances with missing class
-    i = new Instances(i);
-    i.deleteWithMissingClass();
-
-    m_ZeroR = new weka.classifiers.rules.ZeroR();
-    m_ZeroR.buildClassifier(i);
-    // only class? -> use ZeroR model
-    if (i.numAttributes() == 1) {
-      System.err
-        .println("Cannot build model (only class attribute present in data!), "
-          + "using ZeroR model instead!");
-      m_useDefaultModel = true;
-      return;
-    } else {
-      m_useDefaultModel = false;
-    }
-
-    m_epoch = 0;
-    m_error = 0;
-    m_instances = null;
-    m_currentInstance = null;
-    m_controlPanel = null;
-    m_nodePanel = null;
-
-    m_outputs = new NeuralEnd[0];
-    m_inputs = new NeuralEnd[0];
-    m_numAttributes = 0;
-    m_numClasses = 0;
-    m_neuralNodes = new NeuralConnection[0];
-
-    m_selected = new ArrayList<NeuralConnection>(4);
-    m_nextId = 0;
-    m_stopIt = true;
-    m_stopped = true;
-    m_accepted = false;
-    m_instances = new Instances(i);
-    m_random = new Random(m_randomSeed);
-    m_instances.randomize(m_random);
-
-    if (m_useNomToBin) {
-      m_nominalToBinaryFilter = new NominalToBinary();
-      m_nominalToBinaryFilter.setInputFormat(m_instances);
-      m_instances = Filter.useFilter(m_instances, m_nominalToBinaryFilter);
-    }
-    m_numAttributes = m_instances.numAttributes() - 1;
-    m_numClasses = m_instances.numClasses();
-
-    setClassType(m_instances);
-
-    // this sets up the validation set.
-    Instances valSet = null;
-    // numinval is needed later
-    int numInVal = (int) (m_valSize / 100.0 * m_instances.numInstances());
-    if (m_valSize > 0) {
-      if (numInVal == 0) {
-        numInVal = 1;
-      }
-      valSet = new Instances(m_instances, 0, numInVal);
-    }
-    // /////////
-
-    setupInputs();
-
-    setupOutputs();
-    if (m_autoBuild) {
-      setupHiddenLayer();
-    }
-
-    // ///////////////////////////
+	  // this sets up the validation set.
+	    Instances valSet = null;
+	    // numinval is needed later
+	    int numInVal = (int) (m_valSize / 100.0 * m_instances.numInstances());
+	    if (m_valSize > 0) {
+	      if (numInVal == 0) {
+	        numInVal = 1;
+	      }
+	      valSet = new Instances(m_instances, 0, numInVal);
+	    }
     // this sets up the gui for usage
     if (m_gui) {
       m_win = new JFrame();
@@ -2079,7 +2115,6 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     m_instances = new Instances(m_instances, 0);
     m_currentInstance = null;
   }
-
   /**
    * Call this function to predict the class of an instance once a
    * classification model has been built with the buildClassifier call.
@@ -2475,25 +2510,25 @@ public class MultilayerPerceptron extends AbstractClassifier implements
 
     StringBuffer model = new StringBuffer(m_neuralNodes.length * 100);
     // just a rough size guess
-    NeuralNode con;
+    ABCNeuralNode con;
     double[] weights;
-    NeuralConnection[] inputs;
-    for (NeuralConnection m_neuralNode : m_neuralNodes) {
-      con = (NeuralNode) m_neuralNode; // this would need a change
+    ABCNeuralConnection[] inputs;
+    for (ABCNeuralConnection m_neuralNode : m_neuralNodes) {
+      con = (ABCNeuralNode) m_neuralNode; // this would need a change
                                        // for items other than nodes!!!
       weights = con.getWeights();
       inputs = con.getInputs();
-      if (con.getMethod() instanceof SigmoidUnit) {
+      if (con.getMethod() instanceof ABCSigmoidUnit) {
         model.append("Sigmoid ");
-      } else if (con.getMethod() instanceof LinearUnit) {
+      } else if (con.getMethod() instanceof ABCLinearUnit) {
         model.append("Linear ");
       }
       model.append("Node " + con.getId() + "\n    Inputs    Weights\n");
       model.append("    Threshold    " + weights[0] + "\n");
       for (int nob = 1; nob < con.getNumInputs() + 1; nob++) {
-        if ((inputs[nob - 1].getType() & NeuralConnection.PURE_INPUT) == NeuralConnection.PURE_INPUT) {
+        if ((inputs[nob - 1].getType() & ABCNeuralConnection.PURE_INPUT) == ABCNeuralConnection.PURE_INPUT) {
           model.append("    Attrib "
-            + m_instances.attribute(((NeuralEnd) inputs[nob - 1]).getLink())
+            + m_instances.attribute(((ABCNeuralEnd) inputs[nob - 1]).getLink())
               .name() + "    " + weights[nob] + "\n");
         } else {
           model.append("    Node " + inputs[nob - 1].getId() + "    "
@@ -2502,15 +2537,15 @@ public class MultilayerPerceptron extends AbstractClassifier implements
       }
     }
     // now put in the ends
-    for (NeuralEnd m_output : m_outputs) {
+    for (ABCNeuralEnd m_output : m_outputs) {
       inputs = m_output.getInputs();
       model.append("Class "
         + m_instances.classAttribute().value(m_output.getLink())
         + "\n    Input\n");
       for (int nob = 0; nob < m_output.getNumInputs(); nob++) {
-        if ((inputs[nob].getType() & NeuralConnection.PURE_INPUT) == NeuralConnection.PURE_INPUT) {
+        if ((inputs[nob].getType() & ABCNeuralConnection.PURE_INPUT) == ABCNeuralConnection.PURE_INPUT) {
           model.append("    Attrib "
-            + m_instances.attribute(((NeuralEnd) inputs[nob]).getLink()).name()
+            + m_instances.attribute(((ABCNeuralEnd) inputs[nob]).getLink()).name()
             + "\n");
         } else {
           model.append("    Node " + inputs[nob].getId() + "\n");

@@ -22,6 +22,7 @@ weka.experiment.SplitEvaluator=\
 # Lists the Classifiers-Packages I want to choose from
 weka.classifiers.Classifier=\
  weka.classifiers.bayes,\
+ weka.classifiers.abc,\
  weka.classifiers.functions,\
  weka.classifiers.lazy,\
  weka.classifiers.meta,\
