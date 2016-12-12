@@ -2518,6 +2518,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
         }
       }
     }
+    model.append("\nglobal error is "+m_error+"\n");
     return model.toString();
   }
 
