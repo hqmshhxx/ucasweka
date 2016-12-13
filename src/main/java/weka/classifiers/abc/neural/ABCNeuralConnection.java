@@ -14,11 +14,11 @@
  */
 
 /*
- *    NeuralConnection.java
+ *    ABCNeuralConnection.java
  *    Copyright (C) 2000-2012 University of Waikato, Hamilton, New Zealand
  */
 
-package weka.classifiers.functions.neural;
+package weka.classifiers.abc.neural;
 
 import java.awt.Color;
 import java.awt.Graphics;
@@ -32,15 +32,13 @@ import weka.core.RevisionHandler;
  * @author Malcolm Ware (mfw4@cs.waikato.ac.nz)
  * @version $Revision: 8034 $
  */
-public abstract class NeuralConnection
+public abstract class ABCNeuralConnection
   implements Serializable, RevisionHandler {
+  
 
-  /** for serialization */
-  private static final long serialVersionUID = -286208828571059163L;
+  private static final long serialVersionUID = 5697263391701383985L;
 
-  //bitwise flags for the types of unit.
-
-  /** This unit is not connected to any others. */
+/** This unit is not connected to any others. */
   public static final int UNCONNECTED = 0;
   
   /** This unit is a pure input unit. */
@@ -68,10 +66,10 @@ public abstract class NeuralConnection
 
 
   /** The list of inputs to this unit. */
-  protected NeuralConnection[] m_inputList;
+  protected ABCNeuralConnection[] m_inputList;
 
   /** The list of outputs from this unit. */
-  protected NeuralConnection[] m_outputList;
+  protected ABCNeuralConnection[] m_outputList;
 
   /** The numbering for the connections at the other end of the input lines. */
   protected int[] m_inputNums;
@@ -116,11 +114,11 @@ public abstract class NeuralConnection
    * 
    * @param id the unique id of the unit
    */
-  public NeuralConnection(String id) {
+  public ABCNeuralConnection(String id) {
     
     m_id = id;
-    m_inputList = new NeuralConnection[0];
-    m_outputList = new NeuralConnection[0];
+    m_inputList = new ABCNeuralConnection[0];
+    m_outputList = new ABCNeuralConnection[0];
     m_inputNums = new int[0];
     m_outputNums = new int[0];
 
@@ -193,6 +191,9 @@ public abstract class NeuralConnection
    * weights.
    */
   public abstract void restoreWeights();
+  
+  
+  public abstract void setWeights(double[] weights);
 
   /**
    * Call this to get the weight value on a particular connection.
@@ -236,7 +237,7 @@ public abstract class NeuralConnection
    * (use the connecting and disconnecting functions to do that)
    * @return The inputs list.
    */
-  public NeuralConnection[] getInputs() {
+  public ABCNeuralConnection[] getInputs() {
     return m_inputList;
   }
 
@@ -246,7 +247,7 @@ public abstract class NeuralConnection
    * (use the connecting and disconnecting functions to do that)
    * @return The outputs list.
    */
-  public NeuralConnection[] getOutputs() {
+  public ABCNeuralConnection[] getOutputs() {
     return m_outputList;
   }
 
@@ -396,7 +397,7 @@ public abstract class NeuralConnection
    * @param n It's connection number for this connection.
    * @return True if the connection was made, false otherwise.
    */
-  protected boolean connectInput(NeuralConnection i, int n) {
+  protected boolean connectInput(ABCNeuralConnection i, int n) {
     
     for (int noa = 0; noa < m_numInputs; noa++) {
       if (i == m_inputList[noa]) {
@@ -419,7 +420,7 @@ public abstract class NeuralConnection
    */
   protected void allocateInputs() {
     
-    NeuralConnection[] temp1 = new NeuralConnection[m_inputList.length + 15];
+    ABCNeuralConnection[] temp1 = new ABCNeuralConnection[m_inputList.length + 15];
     int[] temp2 = new int[m_inputNums.length + 15];
 
     for (int noa = 0; noa < m_numInputs; noa++) {
@@ -436,7 +437,7 @@ public abstract class NeuralConnection
    * @param n It's connection number for this connection.
    * @return True if the connection was made, false otherwise.
    */
-  protected boolean connectOutput(NeuralConnection o, int n) {
+  protected boolean connectOutput(ABCNeuralConnection o, int n) {
     
     for (int noa = 0; noa < m_numOutputs; noa++) {
       if (o == m_outputList[noa]) {
@@ -459,8 +460,8 @@ public abstract class NeuralConnection
    */
   protected void allocateOutputs() {
     
-    NeuralConnection[] temp1 
-      = new NeuralConnection[m_outputList.length + 15];
+    ABCNeuralConnection[] temp1 
+      = new ABCNeuralConnection[m_outputList.length + 15];
     
     int[] temp2 = new int[m_outputNums.length + 15];
     
@@ -481,7 +482,7 @@ public abstract class NeuralConnection
    * @return True if the connection was removed, false if the connection was 
    * not found.
    */
-  protected boolean disconnectInput(NeuralConnection i, int n) {
+  protected boolean disconnectInput(ABCNeuralConnection i, int n) {
     
     int loc = -1;
     boolean removed = false;
@@ -522,7 +523,7 @@ public abstract class NeuralConnection
     }
     
     //now reset the inputs.
-    m_inputList = new NeuralConnection[0];
+    m_inputList = new ABCNeuralConnection[0];
     setType(getType() & (~INPUT));
     if (getNumOutputs() == 0) {
       setType(getType() & (~CONNECTED));
@@ -557,7 +558,7 @@ public abstract class NeuralConnection
    * @return True if the connection was removed, false if the connection was
    * not found.
    */  
-  protected boolean disconnectOutput(NeuralConnection o, int n) {
+  protected boolean disconnectOutput(ABCNeuralConnection o, int n) {
     
     int loc = -1;
     boolean removed = false;
@@ -599,7 +600,7 @@ public abstract class NeuralConnection
     }
     
     //now reset the inputs.
-    m_outputList = new NeuralConnection[0];
+    m_outputList = new ABCNeuralConnection[0];
     m_outputNums = new int[0];
     setType(getType() & (~OUTPUT));
     if (getNumInputs() == 0) {
@@ -644,7 +645,7 @@ public abstract class NeuralConnection
    * @param t The target unit.
    * @return True if the units were connected, false otherwise.
    */
-  public static boolean connect(NeuralConnection s, NeuralConnection t) {
+  public static boolean connect(ABCNeuralConnection s, ABCNeuralConnection t) {
     
     if (s == null || t == null) {
       return false;
@@ -705,7 +706,7 @@ public abstract class NeuralConnection
    * @return True if the units were disconnected, false if they weren't
    * (probably due to there being no connection).
    */
-  public static boolean disconnect(NeuralConnection s, NeuralConnection t) {
+  public static boolean disconnect(ABCNeuralConnection s, ABCNeuralConnection t) {
     
     if (s == null || t == null) {
       return false;

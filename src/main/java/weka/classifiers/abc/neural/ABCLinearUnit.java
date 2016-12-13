@@ -14,52 +14,43 @@
  */
 
 /*
- *    SigmoidUnit.java
+ *    LinearUnit.java
  *    Copyright (C) 2001-2012 University of Waikato, Hamilton, New Zealand
  */
 
-package weka.classifiers.functions.neural;
+package weka.classifiers.abc.neural;
 
 import weka.core.RevisionHandler;
 import weka.core.RevisionUtils;
 
 /**
  * This can be used by the 
- * neuralnode to perform all it's computations (as a sigmoid unit).
+ * neuralnode to perform all it's computations (as a Linear unit).
  *
  * @author Malcolm Ware (mfw4@cs.waikato.ac.nz)
  * @version $Revision: 8034 $
  */
-public class SigmoidUnit
-  implements NeuralMethod, RevisionHandler {
+public class ABCLinearUnit
+  implements ABCNeuralMethod, RevisionHandler {
 
-  /** for serialization */
-  private static final long serialVersionUID = -5162958458177475652L;
-  
-  /**
+ 
+	private static final long serialVersionUID = -5106822257373839014L;
+
+/**
    * This function calculates what the output value should be.
    * @param node The node to calculate the value for.
    * @return The value.
    */
-  public double outputValue(NeuralNode node) {
+  public double outputValue(ABCNeuralNode node) {
     double[] weights = node.getWeights();
-    NeuralConnection[] inputs = node.getInputs();
+    ABCNeuralConnection[] inputs = node.getInputs();
     double value = weights[0];
     for (int noa = 0; noa < node.getNumInputs(); noa++) {
-      value += inputs[noa].outputValue(true) * weights[noa+1];
+      
+      value += inputs[noa].outputValue(true) 
+	* weights[noa+1];
     }
      
-    //this I got from the Neural Network faq to combat overflow
-    //pretty simple solution really :)
-    if (value < -45) {
-      value = 0;
-    }
-    else if (value > 45) {
-      value = 1;
-    }
-    else {
-      value = 1 / (1 + Math.exp(-value));
-    }  
     return value;
   }
   
@@ -68,19 +59,17 @@ public class SigmoidUnit
    * @param node The node to calculate the error for.
    * @return The error.
    */
-  public double errorValue(NeuralNode node) {
+  public double errorValue(ABCNeuralNode node) {
     //then calculate the error.
     
-    NeuralConnection[] outputs = node.getOutputs();
+    ABCNeuralConnection[] outputs = node.getOutputs();
     int[] oNums = node.getOutputNums();
     double error = 0;
-    
+ 
     for (int noa = 0; noa < node.getNumOutputs(); noa++) {
-      error += outputs[noa].errorValue(true) * outputs[noa].weightValue(oNums[noa]);
+      error += outputs[noa].errorValue(true) 
+	* outputs[noa].weightValue(oNums[noa]);
     }
-    double value = node.outputValue(false);
-    error *= value * (1 - value);
-    
     return error;
   }
 
@@ -91,17 +80,19 @@ public class SigmoidUnit
    * @param learn The learning rate to use.
    * @param momentum The momentum to use.
    */
-  public void updateWeights(NeuralNode node, double learn, double momentum) {
+  public void updateWeights(ABCNeuralNode node, double learn, double momentum) {
 
-    NeuralConnection[] inputs = node.getInputs();
+    ABCNeuralConnection[] inputs = node.getInputs();
     double[] cWeights = node.getChangeInWeights();
     double[] weights = node.getWeights();
+    
     double learnTimesError = 0;
     learnTimesError = learn * node.errorValue(false);
+    
     double c = learnTimesError + momentum * cWeights[0];
     weights[0] += c;
     cWeights[0] = c;
- 
+      
     int stopValue = node.getNumInputs() + 1;
     for (int noa = 1; noa < stopValue; noa++) {
       
@@ -121,4 +112,5 @@ public class SigmoidUnit
   public String getRevision() {
     return RevisionUtils.extract("$Revision: 8034 $");
   }
+
 }

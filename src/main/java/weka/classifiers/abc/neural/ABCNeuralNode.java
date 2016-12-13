@@ -18,7 +18,7 @@
  *    Copyright (C) 2000-2012 University of Waikato, Hamilton, New Zealand
  */
 
-package weka.classifiers.functions.neural;
+package weka.classifiers.abc.neural;
 
 import weka.core.RevisionUtils;
 
@@ -30,13 +30,12 @@ import java.util.Random;
  * @author Malcolm Ware (mfw4@cs.waikato.ac.nz)
  * @version $Revision: 8034 $
  */
-public class NeuralNode
-  extends NeuralConnection {
+public class ABCNeuralNode extends ABCNeuralConnection {
 
-  /** for serialization */
-  private static final long serialVersionUID = -1085750607680839163L;
-    
-  /** The weights for each of the input connections, and the threshold. */
+
+  private static final long serialVersionUID = 8128960315705718119L;
+
+/** The weights for each of the input connections, and the threshold. */
   private double[] m_weights;
   
   /** The best (lowest error) weights. Only used when validation set is used */
@@ -47,39 +46,36 @@ public class NeuralNode
   
   private Random m_random;
 
+
   /** Performs the operations for this node. Currently this
    * defines that the node is either a sigmoid or a linear unit. */
-  private NeuralMethod m_methods;
+  private ABCNeuralMethod m_methods;
 
-  /** 
-   * @param id The string name for this node (used to id this node).
-   * @param r A random number generator used to generate initial weights.
-   * @param m The methods this node should use to update.
-   */
-  public NeuralNode(String id, Random r, NeuralMethod m) {
-    super(id);
-    m_weights = new double[1];
-    m_bestWeights = new double[1];
-    m_changeInWeights = new double[1];
-    
-    m_random = r;
-    
-    m_weights[0] = m_random.nextDouble() * .1 - .05;
-    m_changeInWeights[0] = 0;
+  
+  public ABCNeuralNode(String id, Random r, ABCNeuralMethod m) {
+	    super(id);
+	    m_weights = new double[1];
+	    m_bestWeights = new double[1];
+	    m_changeInWeights = new double[1];
+	    
+	    m_random = r;
+	    
+	    m_weights[0] = m_random.nextDouble() * .1 - .05;
+	    m_changeInWeights[0] = 0;
 
-    m_methods = m;
-  }
+	    m_methods = m;
+	  }
   
   /**
    * Set how this node should operate (note that the neural method has no
    * internal state, so the same object can be used by any number of nodes.
    * @param m The new method.
    */
-  public void setMethod(NeuralMethod m) {
+  public void setMethod(ABCNeuralMethod m) {
     m_methods = m;
   } 
 
-  public NeuralMethod getMethod() {
+  public ABCNeuralMethod getMethod() {
     return m_methods;
   }
 
@@ -176,7 +172,14 @@ public class NeuralNode
     return m_weights[n + 1];
   }
   
-
+  
+  public void setWeights(double[] weights){
+	  if(weights != null){
+		 for(int i=0; i<weights.length; i++){
+			 m_weights[i]=weights[i];
+		 }
+	  }
+  }
   /**
    * call this function to get the weights array.
    * This will also allow the weights to be updated.
@@ -223,7 +226,7 @@ public class NeuralNode
    * @param n It's connection number for this connection.
    * @return True if the connection was made, false otherwise.
    */
-  protected boolean connectInput(NeuralConnection i, int n) {
+  protected boolean connectInput(ABCNeuralConnection i, int n) {
     
     //the function that this overrides can do most of the work.
     if (!super.connectInput(i, n)) {
@@ -244,7 +247,7 @@ public class NeuralNode
    */
   protected void allocateInputs() {
     
-    NeuralConnection[] temp1 = new NeuralConnection[m_inputList.length + 15];
+    ABCNeuralConnection[] temp1 = new ABCNeuralConnection[m_inputList.length + 15];
     int[] temp2 = new int[m_inputNums.length + 15];
     double[] temp4 = new double[m_weights.length + 15];
     double[] temp5 = new double[m_changeInWeights.length + 15];
@@ -280,7 +283,7 @@ public class NeuralNode
    * @return True if the connection was removed, false if the connection was 
    * not found.
    */
-  protected boolean disconnectInput(NeuralConnection i, int n) {
+  protected boolean disconnectInput(ABCNeuralConnection i, int n) {
     
     int loc = -1;
     boolean removed = false;
@@ -336,4 +339,6 @@ public class NeuralNode
   public String getRevision() {
     return RevisionUtils.extract("$Revision: 8034 $");
   }
+
+
 }
