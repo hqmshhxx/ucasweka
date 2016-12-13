@@ -1765,6 +1765,7 @@ public class BP extends AbstractClassifier implements
   }
 
   public void buildNetwork(Instances i)throws Exception {
+	  System.out.println("instances num is "+ i.numInstances());
 	  
 	  i.setClassIndex(i.numAttributes()-1);
 	  // can classifier handle the data?
@@ -1840,16 +1841,14 @@ public class BP extends AbstractClassifier implements
 		  double[] opiWeights = new double[hlNum+1];
 		  opiWeights[0]=weights[opdelta+opi];
 		  for(int k=1;k<hlNum+1; k++){
-			  System.out.println("opwgt = "+opwgt);
 			  opiWeights[k]=weights[opwgt++];
 		  }
 		  m_neuralNodes[opi].setWeights(opiWeights);
 	  }
-	  for(int ipi=0; ipi<ipNum; ipi++){
+	  for(int ipi=0; ipi<hlNum; ipi++){
 		  double[] ipiWeights = new double[ipNum+1];
 		  ipiWeights[0]=weights[hldelta+ipi];
 		  for(int k=1; k<ipNum+1; k++){
-			  System.out.println("hlwgt = "+hlwgt);
 			  ipiWeights[k]=weights[hlwgt++];
 		  }
 		  m_neuralNodes[opNum+ipi].setWeights(ipiWeights);

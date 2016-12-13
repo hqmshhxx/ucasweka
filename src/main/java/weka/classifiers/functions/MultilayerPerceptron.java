@@ -1766,7 +1766,8 @@ public class MultilayerPerceptron extends AbstractClassifier implements
    */
   @Override
   public void buildClassifier(Instances i) throws Exception {
-
+	System.out.println("instances num is "+ i.numInstances());
+	System.out.println("buildClassifier start");
     // can classifier handle the data?
     getCapabilities().testWithFail(i);
 
@@ -1836,6 +1837,12 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     setupOutputs();
     if (m_autoBuild) {
       setupHiddenLayer();
+    }
+    for(int k=0;k<10;k++){
+    	for(int att=0; att<i.numAttributes(); att++){
+    		System.out.print(i.instance(k).value(att)+" ");
+    	}
+    	System.out.println();
     }
 
     // ///////////////////////////
@@ -1985,6 +1992,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
 
       // //////////////////////do validation testing if applicable
       if (m_valSize != 0) {
+    	  System.out.println("do validation testing do validation testing do validation testing");
         right = 0;
         for (int nob = 0; nob < valSet.numInstances(); nob++) {
           m_currentInstance = valSet.instance(nob);
@@ -2078,6 +2086,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     }
     m_instances = new Instances(m_instances, 0);
     m_currentInstance = null;
+    System.out.println("buildClassifier end");
   }
 
   /**

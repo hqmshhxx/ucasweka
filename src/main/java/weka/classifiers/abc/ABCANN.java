@@ -19,9 +19,9 @@ public class ABCANN implements Serializable{
 	 * A food source which could not be improved through "limit" trials is
 	 * abandoned by its employed bee
 	 */
-	int limit = 20;
+	int limit = 10;
 	/** The number of cycles for foraging {a stopping criteria} */
-	int maxCycle = 100;
+	int maxCycle = 20;
 	int mCycle = 0;
 
 	/** Problem specific variables */
@@ -488,6 +488,7 @@ public class ABCANN implements Serializable{
 			sendOnlookerBees();
 			memorizeBestSource();
 			sendScoutBees();
+			System.out.println("mcycle = " + mCycle);
 		}
 		System.out.println("人工蜂群的最小值：" + getMinObjFunValue());
 		
