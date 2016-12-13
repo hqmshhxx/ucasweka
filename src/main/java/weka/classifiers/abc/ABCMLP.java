@@ -1,11 +1,11 @@
 package weka.classifiers.abc;
 
 import java.util.Collections;
-import java.util.StringTokenizer;
 import java.util.Vector;
 
 import weka.classifiers.AbstractClassifier;
 import weka.core.Capabilities;
+import weka.core.Instance;
 import weka.core.Instances;
 import weka.core.OptionHandler;
 import weka.core.Utils;
@@ -37,7 +37,8 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 
 		return result;
 	}
-
+	
+	@Override
 	public void buildClassifier(Instances data) throws Exception {
 
 		abcAnn.setData(data);
@@ -46,6 +47,24 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 		bp.buildNetwork(data);
 		bp.initWeights(weights);
 		bp.buildClassifier(data);
+		System.out.println("buildClassifier end");
+	}
+
+	/**
+	 * Call this function to predict the class of an instance once a
+	 * classification model has been built with the buildClassifier call.
+	 * 
+	 * @param i
+	 *            The instance to classify.
+	 * @return A double array filled with the probabilities of each class type.
+	 * @throws Exception
+	 *             if can't classify instance.
+	 */
+	@Override
+	public double[] distributionForInstance(Instance i) throws Exception {
+
+		return bp.distributionForInstance(i);
+		
 	}
 
 	public void setInputNum(int in) {
