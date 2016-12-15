@@ -26,28 +26,38 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 
 	@Override
 	public Capabilities getCapabilities() {
-		Capabilities result = super.getCapabilities();
-		result.disableAll();
+		 Capabilities result = super.getCapabilities();
+		    result.disableAll();
 
-		// attributes
-		result.enable(Capability.NOMINAL_ATTRIBUTES);
-		result.enable(Capability.NUMERIC_ATTRIBUTES);
-		// class
-		result.enable(Capability.NUMERIC_CLASS);
+		    // attributes
+		    result.enable(Capability.NOMINAL_ATTRIBUTES);
+		    result.enable(Capability.NUMERIC_ATTRIBUTES);
+		    result.enable(Capability.DATE_ATTRIBUTES);
+		    result.enable(Capability.MISSING_VALUES);
+
+		    // class
+		    result.enable(Capability.NOMINAL_CLASS);
+		    result.enable(Capability.NUMERIC_CLASS);
+		    result.enable(Capability.DATE_CLASS);
+		    result.enable(Capability.MISSING_CLASS_VALUES);
+
 
 		return result;
 	}
 	
 	@Override
 	public void buildClassifier(Instances data) throws Exception {
-
+		data.setClassIndex(data.numAttributes()-1);
 		abcAnn.setData(data);
+		abcAnn.setBp(bp);
+		abcAnn.setInputNum(data.numAttributes() - 1);
+		abcAnn.setHiddenNum(3);
+		abcAnn.setOutNum(data.numClasses());
 		abcAnn.build();
+		System.out.println("人工蜂群的最小值：" + abcAnn.getMinObjFunValue());
 		double[] weights = abcAnn.getBestFood();
-		bp.buildNetwork(data);
 		bp.initWeights(weights);
-		bp.buildClassifier(data);
-		System.out.println("buildClassifier end");
+		bp.buildClassifier(null);
 	}
 
 	/**

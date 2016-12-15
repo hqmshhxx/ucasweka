@@ -50,7 +50,6 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 
-
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
 import weka.classifiers.abc.neural.ABCLinearUnit;
@@ -1088,16 +1087,16 @@ public class BP extends AbstractClassifier implements
     // defaults they will also need to be changed down the bottom in the
     // setoptions function (the text info in the accompanying functions should
     // also be changed to reflect the new defaults
-    m_normalizeClass = true;
-    m_normalizeAttributes = true;
+    m_normalizeClass = false;
+    m_normalizeAttributes = false;
     m_autoBuild = true;
     m_gui = false;
-    m_useNomToBin = true;
+    m_useNomToBin = false;
     m_driftThreshold = 20;
     m_numEpochs = 500;
     m_valSize = 0;
     m_randomSeed = 0;
-    m_hiddenLayers = "a";
+    m_hiddenLayers = "3";
     m_learningRate = .3;
     m_momentum = .2;
     m_reset = true;
@@ -1832,7 +1831,6 @@ public class BP extends AbstractClassifier implements
 	  int hlNum = Integer.parseInt(m_hiddenLayers);
 	  int ipNum = m_numAttributes;
 	  int opNum = m_numClasses;
-	  System.out.println(ipNum+"x"+hlNum+"x"+opNum);
 	  int opdelta = ipNum*hlNum+hlNum+hlNum*opNum;
 	  int opwgt = ipNum*hlNum+hlNum;
 	  int hldelta = ipNum*hlNum;
@@ -1854,6 +1852,11 @@ public class BP extends AbstractClassifier implements
 		  m_neuralNodes[opNum+ipi].setWeights(ipiWeights);
 	  }
   }
+	public double buildNet(double[] weights) throws Exception{
+		initWeights(weights);
+		buildClassifier(null);
+		return m_error;
+	}
   /**
    * Call this function to build and train a neural network for the training
    * data provided.
@@ -1995,7 +1998,6 @@ public class BP extends AbstractClassifier implements
           updateNetworkWeights(tempRate, m_momentum);
 
         }
-
       }
       right /= totalWeight;
       if (Double.isInfinite(right) || Double.isNaN(right)) {
@@ -2012,7 +2014,7 @@ public class BP extends AbstractClassifier implements
           m_learningRate /= 2;
           buildClassifier(i);
           m_learningRate = origRate;
-          m_instances = new Instances(m_instances, 0);
+//          m_instances = new Instances(m_instances, 0);
           m_currentInstance = null;
           return;
         }
@@ -2111,7 +2113,7 @@ public class BP extends AbstractClassifier implements
       m_controlPanel = null;
       m_nodePanel = null;
     }
-    m_instances = new Instances(m_instances, 0);
+//    m_instances = new Instances(m_instances, 0);
     m_currentInstance = null;
   }
   /**
