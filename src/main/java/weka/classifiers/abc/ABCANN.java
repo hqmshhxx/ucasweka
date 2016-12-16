@@ -12,7 +12,7 @@ public class ABCANN implements Serializable{
 
 	private static final long serialVersionUID = 2150281474585060975L;
 	/** The number of colony size (employed bees+onlooker bees) */
-	int NP = 100;
+	int NP = 200;
 	/** The number of food sources equals the half of the colony size */
 	int foodNum = NP / 2;
 	/**
@@ -21,7 +21,7 @@ public class ABCANN implements Serializable{
 	 */
 	int limit = 10;
 	/** The number of cycles for foraging {a stopping criteria} */
-	int maxCycle = 20;
+	int maxCycle = 200;
 	int mCycle = 0;
 
 	/** Problem specific variables */
@@ -458,9 +458,7 @@ public class ABCANN implements Serializable{
 	}
 	public void setData(Instances data){
 		train = new Instances(data);
-		setInputNum(data.numAttributes()-1);
-		setHiddenNum(3);
-		setOutNum(1);
+		
 	}
 	public void setInputNum(int in){
 		ipNum = in;
@@ -476,6 +474,20 @@ public class ABCANN implements Serializable{
 	}
 	public double[] getBestFood(){
 		return bestFood;
+	}
+	
+	public void setRange(double r){
+		lb = -r;
+		ub = r;
+	}
+	public double getRange(){
+		return ub;
+	}
+	public void setMaxCycle(int cycle){
+		maxCycle = cycle;
+	}
+	public int getMaxCycle(){
+		return maxCycle;
 	}
 	
 	public void build(){

@@ -1081,16 +1081,16 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     // defaults they will also need to be changed down the bottom in the
     // setoptions function (the text info in the accompanying functions should
     // also be changed to reflect the new defaults
-    m_normalizeClass = true;
-    m_normalizeAttributes = true;
+    m_normalizeClass = false;
+    m_normalizeAttributes = false;
     m_autoBuild = true;
     m_gui = false;
-    m_useNomToBin = true;
+    m_useNomToBin = false;
     m_driftThreshold = 20;
     m_numEpochs = 500;
     m_valSize = 0;
     m_randomSeed = 0;
-    m_hiddenLayers = "a";
+    m_hiddenLayers = "3";
     m_learningRate = .3;
     m_momentum = .2;
     m_reset = true;
@@ -1779,8 +1779,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     m_ZeroR.buildClassifier(i);
     // only class? -> use ZeroR model
     if (i.numAttributes() == 1) {
-      System.err
-        .println("Cannot build model (only class attribute present in data!), "
+      System.err.println("Cannot build model (only class attribute present in data!), "
           + "using ZeroR model instead!");
       m_useDefaultModel = true;
       return;
@@ -1817,7 +1816,7 @@ public class MultilayerPerceptron extends AbstractClassifier implements
     }
     m_numAttributes = m_instances.numAttributes() - 1;
     m_numClasses = m_instances.numClasses();
-
+    System.out.println("attr num = "+m_numAttributes+" class num = "+m_numClasses);
     setClassType(m_instances);
 
     // this sets up the validation set.

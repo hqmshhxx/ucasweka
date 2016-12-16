@@ -32,16 +32,25 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 		// attributes
 		result.enable(Capability.NOMINAL_ATTRIBUTES);
 		result.enable(Capability.NUMERIC_ATTRIBUTES);
+		result.enable(Capability.DATE_ATTRIBUTES);
+		result.enable(Capability.MISSING_VALUES);
+
 		// class
+		result.enable(Capability.NOMINAL_CLASS);
 		result.enable(Capability.NUMERIC_CLASS);
+		result.enable(Capability.DATE_CLASS);
+		result.enable(Capability.MISSING_CLASS_VALUES);
 
 		return result;
 	}
-	
+
 	@Override
 	public void buildClassifier(Instances data) throws Exception {
 
 		abcAnn.setData(data);
+		abcAnn.setInputNum(data.numAttributes()-1);
+		abcAnn.setHiddenNum(3);
+		abcAnn.setOutNum(data.numClasses());
 		abcAnn.build();
 		double[] weights = abcAnn.getBestFood();
 		bp.buildNetwork(data);
@@ -64,7 +73,7 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 	public double[] distributionForInstance(Instance i) throws Exception {
 
 		return bp.distributionForInstance(i);
-		
+
 	}
 
 	public void setInputNum(int in) {
@@ -117,8 +126,24 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 		if (hiddenLayers.length() != 0) {
 			setHiddenLayers(hiddenLayers);
 		} else {
-			setHiddenLayers("a");
+			setHiddenLayers("3");
 		}
+		String range = Utils.getOption('R', options);
+		if (range.length() != 0) {
+			setRange(Double.parseDouble(range));
+		} else {
+			setRange(10);
+		}
+		String maxCycle = Utils.getOption('c', options);
+		if (maxCycle.length() != 0) {
+			setMaxCycle(Integer.parseInt(maxCycle));
+		} else {
+			setMaxCycle(100);
+		}
+		
+		
+		
+		
 		if (Utils.getFlag('G', options)) {
 			setGUI(true);
 		} else {
@@ -182,6 +207,10 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 		options.add("" + getValidationThreshold());
 		options.add("-H");
 		options.add(getHiddenLayers());
+		options.add("-R");
+		options.add(getRange()+"");
+		options.add("-c");
+		options.add(getMaxCycle()+"");
 		if (getGUI()) {
 			options.add("-G");
 		}
@@ -427,6 +456,19 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 	 */
 	public int getTrainingTime() {
 		return bp.getTrainingTime();
+	}
+	
+	public void setRange(double r){
+		abcAnn.setRange(r);
+	}
+	public double getRange(){
+		return abcAnn.getRange();
+	}
+	public void setMaxCycle(int cycle){
+		abcAnn.setMaxCycle(cycle);
+	}
+	public int getMaxCycle(){
+		return abcAnn.getMaxCycle();
 	}
 
 	@Override

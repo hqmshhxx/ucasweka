@@ -50,7 +50,6 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 
-
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Classifier;
 import weka.classifiers.abc.neural.ABCLinearUnit;
@@ -1088,16 +1087,16 @@ public class BP extends AbstractClassifier implements
     // defaults they will also need to be changed down the bottom in the
     // setoptions function (the text info in the accompanying functions should
     // also be changed to reflect the new defaults
-    m_normalizeClass = true;
-    m_normalizeAttributes = true;
+    m_normalizeClass = false;
+    m_normalizeAttributes = false;
     m_autoBuild = true;
     m_gui = false;
-    m_useNomToBin = true;
+    m_useNomToBin = false;
     m_driftThreshold = 20;
     m_numEpochs = 500;
     m_valSize = 0;
     m_randomSeed = 0;
-    m_hiddenLayers = "a";
+    m_hiddenLayers = "3";
     m_learningRate = .3;
     m_momentum = .2;
     m_reset = true;
@@ -1400,7 +1399,7 @@ public class BP extends AbstractClassifier implements
    * @param n The number of epochs to train through.
    */
   public void setTrainingTime(int n) {
-    if (n > 0) {
+    if (n >= 0) {
       m_numEpochs = n;
     }
   }
@@ -1817,6 +1816,7 @@ public class BP extends AbstractClassifier implements
 	    }
 	    m_numAttributes = m_instances.numAttributes() - 1;
 	    m_numClasses = m_instances.numClasses();
+	    System.out.println("attr num = "+m_numAttributes+" class num = "+m_numClasses);
 
 	    setClassType(m_instances);
 

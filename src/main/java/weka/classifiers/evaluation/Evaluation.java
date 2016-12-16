@@ -1486,6 +1486,7 @@ public class Evaluation implements Summarizable, RevisionHandler, Serializable {
       testingEvaluation.setPriors(train);
       trainTimeStart = System.currentTimeMillis();
       if (objectInputFileName.length() == 0) {
+    	  System.out.println("test 1");
         classifier.buildClassifier(train);
       }
       Instance trainInst;
@@ -1524,6 +1525,7 @@ public class Evaluation implements Summarizable, RevisionHandler, Serializable {
       trainingEvaluation.setPriors(tempTrain);
       testingEvaluation.setPriors(tempTrain);
       trainTimeStart = System.currentTimeMillis();
+      System.out.println("test 2");
       classifier.buildClassifier(tempTrain);
       trainTimeElapsed = System.currentTimeMillis() - trainTimeStart;
     }
