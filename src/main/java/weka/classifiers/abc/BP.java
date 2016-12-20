@@ -1764,7 +1764,6 @@ public class BP extends AbstractClassifier implements
   }
 
   public void buildNetwork(Instances i)throws Exception {
-	  System.out.println("instances num is "+ i.numInstances());
 	  
 	  i.setClassIndex(i.numAttributes()-1);
 	  // can classifier handle the data?
@@ -1832,7 +1831,6 @@ public class BP extends AbstractClassifier implements
 	  int hlNum = Integer.parseInt(m_hiddenLayers);
 	  int ipNum = m_numAttributes;
 	  int opNum = m_numClasses;
-	  System.out.println(ipNum+"x"+hlNum+"x"+opNum);
 	  int opdelta = ipNum*hlNum+hlNum+hlNum*opNum;
 	  int opwgt = ipNum*hlNum+hlNum;
 	  int hldelta = ipNum*hlNum;
@@ -1854,6 +1852,11 @@ public class BP extends AbstractClassifier implements
 		  m_neuralNodes[opNum+ipi].setWeights(ipiWeights);
 	  }
   }
+	public double buildNet(double[] weights) throws Exception{
+		initWeights(weights);
+		buildClassifier(null);
+		return m_error;
+	}
   /**
    * Call this function to build and train a neural network for the training
    * data provided.
@@ -1874,75 +1877,13 @@ public class BP extends AbstractClassifier implements
 	      }
 	      valSet = new Instances(m_instances, 0, numInVal);
 	    }
-    // this sets up the gui for usage
-    if (m_gui) {
-      m_win = new JFrame();
-
-      m_win.addWindowListener(new WindowAdapter() {
-        @Override
-        public void windowClosing(WindowEvent e) {
-          boolean k = m_stopIt;
-          m_stopIt = true;
-          int well = JOptionPane.showConfirmDialog(m_win, "Are You Sure...\n"
-            + "Click Yes To Accept" + " The Neural Network"
-            + "\n Click No To Return", "Accept Neural Network",
-            JOptionPane.YES_NO_OPTION);
-
-          if (well == 0) {
-            m_win.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-            m_accepted = true;
-            blocker(false);
-          } else {
-            m_win.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-          }
-          m_stopIt = k;
-        }
-      });
-
-      m_win.getContentPane().setLayout(new BorderLayout());
-      m_win.setTitle("Neural Network");
-      m_nodePanel = new NodePanel();
-      // without the following two lines, the
-      // NodePanel.paintComponents(Graphics)
-      // method will go berserk if the network doesn't fit completely: it will
-      // get called on a constant basis, using 100% of the CPU
-      // see the following forum thread:
-      // http://forum.java.sun.com/thread.jspa?threadID=580929&messageID=2945011
-      m_nodePanel.setPreferredSize(new Dimension(640, 480));
-      m_nodePanel.revalidate();
-
-      JScrollPane sp = new JScrollPane(m_nodePanel,
-        JScrollPane.VERTICAL_SCROLLBAR_ALWAYS,
-        JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-      m_controlPanel = new ControlPanel();
-
-      m_win.getContentPane().add(sp, BorderLayout.CENTER);
-      m_win.getContentPane().add(m_controlPanel, BorderLayout.SOUTH);
-      m_win.setSize(640, 480);
-      m_win.setVisible(true);
-    }
-
-    // This sets up the initial state of the gui
-    if (m_gui) {
-      blocker(true);
-      m_controlPanel.m_changeEpochs.setEnabled(false);
-      m_controlPanel.m_changeLearning.setEnabled(false);
-      m_controlPanel.m_changeMomentum.setEnabled(false);
-    }
-
+  
     // For silly situations in which the network gets accepted before training
     // commenses
     if (m_numeric) {
       setEndsToLinear();
     }
-    if (m_accepted) {
-      m_win.dispose();
-      m_controlPanel = null;
-      m_nodePanel = null;
-      m_instances = new Instances(m_instances, 0);
-      m_currentInstance = null;
-      return;
-    }
+  
 
     // connections done.
     double right = 0;
@@ -1995,7 +1936,6 @@ public class BP extends AbstractClassifier implements
           updateNetworkWeights(tempRate, m_momentum);
 
         }
-
       }
       right /= totalWeight;
       if (Double.isInfinite(right) || Double.isNaN(right)) {
@@ -2012,7 +1952,7 @@ public class BP extends AbstractClassifier implements
           m_learningRate /= 2;
           buildClassifier(i);
           m_learningRate = origRate;
-          m_instances = new Instances(m_instances, 0);
+//          m_instances = new Instances(m_instances, 0);
           m_currentInstance = null;
           return;
         }
@@ -2061,57 +2001,15 @@ public class BP extends AbstractClassifier implements
       m_error = right;
       // shows what the neuralnet is upto if a gui exists.
       updateDisplay();
-      // This junction controls what state the gui is in at the end of each
-      // epoch, Such as if it is paused, if it is resumable etc...
-      if (m_gui) {
-        while ((m_stopIt || (m_epoch >= m_numEpochs && m_valSize == 0))
-          && !m_accepted) {
-          m_stopIt = true;
-          m_stopped = true;
-          if (m_epoch >= m_numEpochs && m_valSize == 0) {
 
-            m_controlPanel.m_startStop.setEnabled(false);
-          } else {
-            m_controlPanel.m_startStop.setEnabled(true);
-          }
-          m_controlPanel.m_startStop.setText("Start");
-          m_controlPanel.m_startStop.setActionCommand("Start");
-          m_controlPanel.m_changeEpochs.setEnabled(true);
-          m_controlPanel.m_changeLearning.setEnabled(true);
-          m_controlPanel.m_changeMomentum.setEnabled(true);
-
-          blocker(true);
-          if (m_numeric) {
-            setEndsToLinear();
-          }
-        }
-        m_controlPanel.m_changeEpochs.setEnabled(false);
-        m_controlPanel.m_changeLearning.setEnabled(false);
-        m_controlPanel.m_changeMomentum.setEnabled(false);
-
-        m_stopped = false;
-        // if the network has been accepted stop the training loop
-        if (m_accepted) {
-          m_win.dispose();
-          m_controlPanel = null;
-          m_nodePanel = null;
-          m_instances = new Instances(m_instances, 0);
-          m_currentInstance = null;
-          return;
-        }
-      }
       if (m_accepted) {
-        m_instances = new Instances(m_instances, 0);
+//        m_instances = new Instances(m_instances, 0);
         m_currentInstance = null;
         return;
       }
     }
-    if (m_gui) {
-      m_win.dispose();
-      m_controlPanel = null;
-      m_nodePanel = null;
-    }
-    m_instances = new Instances(m_instances, 0);
+    
+//    m_instances = new Instances(m_instances, 0);
     m_currentInstance = null;
   }
   /**

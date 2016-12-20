@@ -34,7 +34,6 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 		result.enable(Capability.NUMERIC_ATTRIBUTES);
 		result.enable(Capability.DATE_ATTRIBUTES);
 		result.enable(Capability.MISSING_VALUES);
-
 		// class
 		result.enable(Capability.NOMINAL_CLASS);
 		result.enable(Capability.NUMERIC_CLASS);
@@ -46,17 +45,17 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 
 	@Override
 	public void buildClassifier(Instances data) throws Exception {
-
+		data.setClassIndex(data.numAttributes() - 1);
 		abcAnn.setData(data);
-		abcAnn.setInputNum(data.numAttributes()-1);
-		abcAnn.setHiddenNum(3);
+		abcAnn.setBp(bp);
+		abcAnn.setInputNum(data.numAttributes() - 1);
+//		abcAnn.setHiddenNum(6);
 		abcAnn.setOutNum(data.numClasses());
 		abcAnn.build();
+		System.out.println("人工蜂群的最小值：" + abcAnn.getMinObjFunValue());
 		double[] weights = abcAnn.getBestFood();
-		bp.buildNetwork(data);
 		bp.initWeights(weights);
-		bp.buildClassifier(data);
-		System.out.println("buildClassifier end");
+		bp.buildClassifier(null);
 	}
 
 	/**
@@ -140,10 +139,7 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 		} else {
 			setMaxCycle(100);
 		}
-		
-		
-		
-		
+
 		if (Utils.getFlag('G', options)) {
 			setGUI(true);
 		} else {
@@ -208,9 +204,9 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 		options.add("-H");
 		options.add(getHiddenLayers());
 		options.add("-R");
-		options.add(getRange()+"");
+		options.add(getRange() + "");
 		options.add("-c");
-		options.add(getMaxCycle()+"");
+		options.add(getMaxCycle() + "");
 		if (getGUI()) {
 			options.add("-G");
 		}
@@ -396,6 +392,7 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 	 */
 	public void setHiddenLayers(String h) {
 		bp.setHiddenLayers(h);
+		abcAnn.setHiddenNum(Integer.parseInt(h));
 	}
 
 	/**
@@ -457,17 +454,20 @@ public class ABCMLP extends AbstractClassifier implements OptionHandler,
 	public int getTrainingTime() {
 		return bp.getTrainingTime();
 	}
-	
-	public void setRange(double r){
+
+	public void setRange(double r) {
 		abcAnn.setRange(r);
 	}
-	public double getRange(){
+
+	public double getRange() {
 		return abcAnn.getRange();
 	}
-	public void setMaxCycle(int cycle){
+
+	public void setMaxCycle(int cycle) {
 		abcAnn.setMaxCycle(cycle);
 	}
-	public int getMaxCycle(){
+
+	public int getMaxCycle() {
 		return abcAnn.getMaxCycle();
 	}
 

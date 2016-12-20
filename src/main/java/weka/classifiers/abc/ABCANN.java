@@ -12,7 +12,8 @@ public class ABCANN implements Serializable{
 
 	private static final long serialVersionUID = 2150281474585060975L;
 	/** The number of colony size (employed bees+onlooker bees) */
-	int NP = 200;
+
+	int NP = 50;
 	/** The number of food sources equals the half of the colony size */
 	int foodNum = NP / 2;
 	/**
@@ -21,19 +22,20 @@ public class ABCANN implements Serializable{
 	 */
 	int limit = 10;
 	/** The number of cycles for foraging {a stopping criteria} */
-	int maxCycle = 200;
+
+	int maxCycle = 5;
 	int mCycle = 0;
 
 	/** Problem specific variables */
 	/** The number of parameters of the problem to be optimized */
 	int dimension = 0;
 	/** lower bound of the parameters. */
-	double lb = -5;
+	double lb = -3;
 	/**
 	 * upper bound of the parameters. lb and ub can be defined as arrays for the
 	 * problems of which parameters have different bounds
 	 */
-	double ub = 5;
+	double ub = 3;
 
 	/** Algorithm can be run many times in order to see its robustness */
 	int runCount = 30;
@@ -87,8 +89,7 @@ public class ABCANN implements Serializable{
 	private int opNum = 1;
 	
 	private Instances train;
-
-
+	private BP bp;
 	
 	/*
 	 * Variables are initialized in the range [lb,ub]. If each parameter has
@@ -383,10 +384,10 @@ public class ABCANN implements Serializable{
 	/** Fitness function */
 	public double calculateFitness(double fun) {
 		double result = 0;
-		if (fun >= 0) {
+		if (fun > 0) {
 			result = 1 / (fun + 1);
 		} else {
-			result = 1 + Math.abs(fun);
+			result = 1;
 		}
 		return result;
 	}
@@ -399,8 +400,19 @@ public class ABCANN implements Serializable{
 	 * @return
 	 */
 	public double calculateObjectiveFunction(double sol[]) {
-		return calculateErrors(sol);
+//		return calculateErrors(sol);
+		return buildNet(sol);
 
+	}
+	public double buildNet(double[] weights){
+		double error = Double.MAX_VALUE;
+		try {
+			error = bp.buildNet(weights);
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return  error;
 	}
 	public double calculateErrors(double[]solution){
 		if(train == null){
@@ -458,7 +470,6 @@ public class ABCANN implements Serializable{
 	}
 	public void setData(Instances data){
 		train = new Instances(data);
-		
 	}
 	public void setInputNum(int in){
 		ipNum = in;
@@ -490,20 +501,32 @@ public class ABCANN implements Serializable{
 		return maxCycle;
 	}
 	
+	public void setBp(BP bp){
+		this.bp = bp;
+	}
 	public void build(){
+		try {
+			bp.buildNetwork(train);
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		System.out.println("start abc");
 		initial();
 		memorizeBestSource();
 		for (int iter = 0; iter < maxCycle; iter++) {
 			mCycle = iter + 1;
 			sendEmployedBees();
+			System.out.println("sendEmployedBees finished ");
 			calculateProbabilities();
 			sendOnlookerBees();
+			System.out.println("sendOnlookerBees finished ");
 			memorizeBestSource();
 			sendScoutBees();
-			System.out.println("mcycle = " + mCycle);
+			System.out.println("sendScoutBees finished ");
+			System.out.println("\nmcycle = " + mCycle+"\n");
 		}
 		System.out.println("人工蜂群的最小值：" + getMinObjFunValue());
 		
 	}
-	
 }
