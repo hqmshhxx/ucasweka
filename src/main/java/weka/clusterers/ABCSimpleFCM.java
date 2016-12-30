@@ -28,7 +28,7 @@ import weka.core.WeightedInstancesHandler;
 import weka.core.matrix.Matrix;
 import weka.filters.unsupervised.attribute.ReplaceMissingValues;
 
-public class ABCFCM extends RandomizableClusterer implements
+public class ABCSimpleFCM extends RandomizableClusterer implements
 		NumberOfClustersRequestable, WeightedInstancesHandler,
 		TechnicalInformationHandler {
 
@@ -211,7 +211,7 @@ public class ABCFCM extends RandomizableClusterer implements
 	/** globalMins holds the minObjFunValue of each run in multiple runs */
 	double globalMins[] = new double[runCount];
 
-	public ABCFCM() {
+	public ABCSimpleFCM() {
 		m_SeedDefault = 10;
 		setSeed(m_SeedDefault);
 	}
@@ -1717,6 +1717,6 @@ private class EmployBeeTask implements Callable<Boolean>{
 
 	public static void main(String[] args) {
 		// TODO Auto-generated method stub
-		runClusterer(new ABCFCM(), args);
+		runClusterer(new ABCSimpleFCM(), args);
 	}
 }
