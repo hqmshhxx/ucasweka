@@ -260,47 +260,18 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 
 		m_ClusterCentroids = new Instances(instances, m_NumClusters);
 		m_DistanceFunction.setInstances(instances);
-		Random RandomO = new Random(getSeed());
-		int instIndex;
-		HashMap<DecisionTableHashKey, Integer> initC = new HashMap<DecisionTableHashKey, Integer>();
-		DecisionTableHashKey hk = null;
-
-		Instances initInstances = null;
-		if (m_PreserveOrder) {
-			initInstances = new Instances(instances);
-		} else {
-			initInstances = instances;
-		}
-		// random//在这里随机选取聚类中心没有用，随机初始化membersh才有用
-		for (int j = initInstances.numInstances() - 1; j >= 0; j--) {
-			instIndex = RandomO.nextInt(j + 1);
-			hk = new DecisionTableHashKey(initInstances.instance(instIndex),
-					initInstances.numAttributes(), true);
-			if (!initC.containsKey(hk)) {
-				m_ClusterCentroids.add(initInstances.instance(instIndex));
-				initC.put(hk, null);
-			}
-			initInstances.swap(j, instIndex);
-
-			if (m_ClusterCentroids.numInstances() == m_NumClusters) {
-				break;
-			}
-		}
 		m_initialStartPoints = new Instances(m_ClusterCentroids);
-		m_NumClusters = m_ClusterCentroids.numInstances();
-		// removing reference
-		initInstances = null;
 		memberShip = new Matrix(instances.numInstances(), m_NumClusters);
 		m_squaredErrors = new double[m_NumClusters];
 		m_ClusterNominalCounts = new double[m_NumClusters][instances.numAttributes()][0];
 		m_ClusterMissingCounts = new double[m_NumClusters][instances.numAttributes()];
 		startExecutorPool();
-		initMemberShip(instances);
+		initCentroids(instances);
 		double lastFunVal = 0.0d;
 		do {
 			lastFunVal = m_ObjFunValue;
-			updateCentroid(instances);
 			updateMemberShip(instances);
+			updateCentroids(instances);
 			calculateObjectiveFunction(instances);
 			if(Math.abs(m_ObjFunValue - lastFunVal) == m_EndValue)break;
 			
@@ -312,57 +283,20 @@ public class FuzzyCMeans extends RandomizableClusterer implements
 		m_DistanceFunction.clean();
 
 	}
-
-	public synchronized void initMemberShip(Instances instances) {
-		memberShip = new Matrix(instances.numInstances(), m_NumClusters);
-		int numPerTask = instances.numInstances() / m_executionSlots;
-		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
-		for (int i = 0; i < m_executionSlots; i++) {
-			int start = i * numPerTask;
-			int end = start + numPerTask;
-			if (i == m_NumClusters - 1) {
-				end = instances.numInstances();
+	private void initCentroids(Instances instances){
+		Random rand = new Random(getSeed());
+		for(int i=0; i<m_NumClusters; i++){
+			double[] attributes = new double[instances.numAttributes()];
+			for(int j=0; j< attributes.length; j++){
+				attributes[j]=rand.nextDouble();
 			}
-			results.add(m_executorPool.submit(new InitMembershipTask(instances, start, end)));
-		}
-		try{
-			for(Future<Boolean> task : results){
-				task.get();
-			}
-		}catch(Exception e){
-			e.printStackTrace();
+			Instance in = new DenseInstance(1.0, attributes);
+			m_ClusterCentroids.add(in);
+			m_initialStartPoints.add(in);
 		}
 	}
 
-	private class InitMembershipTask implements Callable<Boolean> {
-		protected int start;
-		protected int end;
-
-		public InitMembershipTask(Instances ins, int start, int end) {
-			this.start = start;
-			this.end = end;
-		}
-
-		public Boolean call() {
-			Random rand = new Random();
-			rand.setSeed(m_Seed);
-			for (int i = start; i < end; i++) {
-				double sum = 0d;
-				for (int j = 0; j < m_NumClusters; j++) {
-					double value = 0.01d + rand.nextDouble();
-					memberShip.set(i, j, value);
-					sum += value;
-				}
-				for (int j = 0; j < m_NumClusters; j++) {
-					double value = memberShip.get(i, j) / sum;
-					memberShip.set(i, j, value);
-				}
-			}
-			return true;
-		}
-	}
-
-	private synchronized void updateCentroid(Instances instances) {
+	private synchronized void updateCentroids(Instances instances) {
 		List<Future<Instance>> results = new ArrayList<Future<Instance>>();
 		for (int k = 0; k < m_NumClusters; k++) {
 			Future<Instance> task = m_executorPool.submit(new ComputeCentroidTask(instances, k));
