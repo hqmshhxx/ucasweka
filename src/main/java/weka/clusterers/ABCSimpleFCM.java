@@ -8,7 +8,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-
 import weka.clusterers.NumberOfClustersRequestable;
 import weka.clusterers.RandomizableClusterer;
 import weka.core.Attribute;
@@ -141,16 +140,16 @@ public class ABCSimpleFCM extends RandomizableClusterer implements
 	
 	
 	/** The number of colony size (employed bees+onlooker bees) */
-	int NP = 200;
+	int NP = 100;
 	/** The number of food sources equals the half of the colony size */
 	int foodNum = NP / 2;
 	/**
 	 * A food source which could not be improved through "limit" trials is
 	 * abandoned by its employed bee
 	 */
-	int limit = 20;
+	int limit = 5;
 	/** The number of cycles for foraging {a stopping criteria} */
-	int maxCycle = 100;
+	int maxCycle = 50;
 	int mCycle = 0;
 
 	/** Problem specific variables */
@@ -210,10 +209,11 @@ public class ABCSimpleFCM extends RandomizableClusterer implements
 	
 	/** globalMins holds the minObjFunValue of each run in multiple runs */
 	double globalMins[] = new double[runCount];
+	
+	int maxIteration = 10;
+	Random rand = new Random();
 
 	public ABCSimpleFCM() {
-		m_SeedDefault = 10;
-		setSeed(m_SeedDefault);
 	}
 
 	/**
@@ -256,36 +256,28 @@ public class ABCSimpleFCM extends RandomizableClusterer implements
 	 */
 	@Override
 	public void buildClusterer(Instances data) throws Exception {
-		getCapabilities().testWithFail(data);
-		startExecutorPool();
+		
 		instances = new Instances(data);
+		
+		getCapabilities().testWithFail(instances);
+		startExecutorPool();
 		init();
 		double mean = 0;
 		for (int run = 0; run < runCount; run++) {
 			initial();
-			memorizeBestSource();
 			for (int iter = 0; iter < maxCycle; iter++) {
 				mCycle = iter+1;
 				sendEmployedBees();
 				calculateProbabilities();
-				memorizeBestSource();
 				sendOnlookerBees();
-				calculateFcm();
 				memorizeBestSource();
 				sendScoutBees();
-				System.out.println("iter="+iter+" minObjFunValue="+minObjFunValue);
+//				System.out.println("iter="+iter+" minObjFunValue="+minObjFunValue);
 			}
-/*			
-			Instances ins = arrayToInstances(bestFood);
-			for(int i=0; i < maxCycle; i++){
-				bestMS = updateMemberShip(ins);
-				m_ClusterCentroids = updateCentroid(bestMS);
-				System.out.println("fcm iter="+i);
-			}
-*/		
+			lastInitCentroids(bestFood);
 			updateClustersInfo();
-			System.out.println("minObjFunValue = "+ minObjFunValue);
-			System.out.println(toString());
+//			System.out.println("minObjFunValue = "+ minObjFunValue);
+//			System.out.println(toString());
 			globalMins[run] = minObjFunValue;
 			mean = mean + minObjFunValue;
 		}
@@ -319,15 +311,18 @@ public class ABCSimpleFCM extends RandomizableClusterer implements
 	public void init(int index) {
 		double[] solution = new double[dimension];
 		for (int j = 0; j < dimension; j++) {
-			foods[index][j] = Math.random() * (ub - lb) + lb;
+			foods[index][j] = rand.nextDouble() * (ub - lb) + lb;
 			solution[j] = foods[index][j];
 		}
+/*		
 		Instances centroids = arrayToInstances(solution);
-		Matrix matrix = updateMemberShip(centroids);
-		matrixs[index] = matrix;
-		funVal[index] = calculateObjectiveFunction(centroids, matrix);
+		matrixs[index]= updateMemberShip(centroids,matrixs[index]);
+		funVal[index] = calculateFunction(centroids,matrixs[index]);
+*/		
+		funVal[index] = calculateObjectiveFunction(solution);
 		fitness[index] = calculateFitness(funVal[index]);
 		trial[index] = 0;
+
 	}
 	private class InitTask implements Callable<Boolean>{
 		private int start;
@@ -340,13 +335,16 @@ public class ABCSimpleFCM extends RandomizableClusterer implements
 			double[] solution = new double[dimension];
 			for (int i = start; i < end; i++) {
 				for (int j = 0; j < dimension; j++) {
-					foods[i][j] = Math.random() * (ub - lb) + lb;
+					foods[i][j] = rand.nextDouble() * (ub - lb) + lb;
 					solution[j] = foods[i][j];
 				}
+/*				
 				Instances centroids = arrayToInstances(solution);
-				Matrix matrix = updateMemberShip(centroids);
-				matrixs[i] = matrix;
-				funVal[i] = calculateObjectiveFunction(centroids, matrix);
+				Matrix matrix = new Matrix(instances.numInstances(), m_NumClusters);
+				matrixs[i]= updateMemberShip(centroids,matrix);
+				funVal[i] = calculateFunction(centroids,matrixs[i]);
+*/				
+				funVal[i] = calculateObjectiveFunction(solution);
 				fitness[i] = calculateFitness(funVal[i]);
 				trial[i] = 0;
 			}
@@ -397,8 +395,8 @@ public class ABCSimpleFCM extends RandomizableClusterer implements
 	 * @param index
 	 * @return
 	 */
-	public List<double[]> calculateNeighbor(int index){
-		List<double[]> neighbors = new ArrayList<>();
+	public List<Integer> calculateNeighbor(int index){
+		List<Integer> neighbors = new ArrayList<>();
 		double mean = calculateMean(index);
 		for(int i=0; i<foodNum; i++){
 			double total =0;
@@ -408,7 +406,7 @@ public class ABCSimpleFCM extends RandomizableClusterer implements
 				}
 			}
 			if(total < mean){
-				neighbors.add(foods[i]);
+				neighbors.add(i);
 			}
 		}
 		return neighbors;
@@ -419,21 +417,14 @@ public class ABCSimpleFCM extends RandomizableClusterer implements
 	 * @return X_{Nm}^best
 	 */
 	public double[] calculateNeighborBest(int index){
-		List<double[]> neighbors = calculateNeighbor(index);
-		double maxFit = lb;
-		double[] maxNeighbor = null;
-		for(double[] neighbor : neighbors){
-			Instances centroids = arrayToInstances(neighbor);
-			Matrix matrix = updateMemberShip(centroids);
-			double objVal = calculateObjectiveFunction(centroids, matrix);
-			double fitness = calculateFitness(objVal);
-			if(maxFit<fitness){
-				maxFit = fitness;
-				maxNeighbor = neighbor;
+		List<Integer> neighbors = calculateNeighbor(index);
+		int bestIndex = neighbors.get(0);
+		for(Integer neighbor : neighbors){
+			if(fitness[neighbor]>fitness[bestIndex]){
+				bestIndex = neighbor;
 			}
 		}
-		return maxNeighbor;
-		
+		return foods[bestIndex];
 	}
 	/** The best food source is memorized */
 	public void memorizeBestSource() {
@@ -443,12 +434,15 @@ public class ABCSimpleFCM extends RandomizableClusterer implements
 			bestFood[j] = foods[minIndex][j];
 		}
 		m_ClusterCentroids = arrayToInstances(bestFood);
-		for(int m = 0; m < instances.numInstances();m++){
-			for(int n=0; n < m_NumClusters;n++){
-				bestMS.set(m, n, matrixs[minIndex].get(m, n));
+		bestMS = updateMemberShip(m_ClusterCentroids,bestMS);
+/*		
+		for(Instance ins : m_ClusterCentroids){
+			for(int i=0; i< ins.numAttributes(); i++){
+				System.out.print(ins.value(i)+" ");
 			}
+			System.out.print("\t");
 		}
-		
+*/		
 	}
 	public void print(){
 		for(double val :funVal){
@@ -465,7 +459,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 		this.end = end;
 	}
 	public Boolean call(){
-		Random rand = new Random();
+		
 		for (int i = start; i < end; i++) {
 			/* The parameter to be changed is determined randomly */
 			int dj = rand.nextInt(dimension);
@@ -481,7 +475,8 @@ private class EmployBeeTask implements Callable<Boolean>{
 			/* v_{ij}=x_{ij}+\phi_{ij}*(x_{kj}-x_{ij}) */
 			double r = rand.nextDouble() * 2 - 1;
 			solution[dj] = foods[i][dj]+ (foods[i][dj] - foods[foodi][dj])
-					* r*(1 + 1/(Math.exp(-maxCycle*1.0/mCycle)+1));
+					* r;
+//					*(1 + 1/(Math.exp(-maxCycle*1.0/mCycle)+1));
 
 			/*
 			 * if generated parameter value is out of boundaries, it is shifted
@@ -491,12 +486,11 @@ private class EmployBeeTask implements Callable<Boolean>{
 				solution[dj] = lb;
 			if (solution[dj] > ub)
 				solution[dj] = ub;
-			
-			Instances centroids = arrayToInstances(solution);
-			Matrix matrix = updateMemberShip(centroids);
-			double objValSol = calculateObjectiveFunction(centroids, matrix);
-			double fitnessSol = calculateFitness(objValSol);
 
+			double objValSol = calculateObjectiveFunction(solution);
+			double fitnessSol = calculateFitness(objValSol);
+			
+			
 			/*
 			 * a greedy selection is applied between the current solution i and
 			 * its mutant
@@ -512,20 +506,9 @@ private class EmployBeeTask implements Callable<Boolean>{
 				for (int j = 0; j < dimension; j++){
 					foods[i][j] = solution[j];
 				}
-					
-				for(int m = 0; m < instances.numInstances();m++){
-					for(int n=0; n < m_NumClusters;n++){
-						matrixs[i].set(m, n, matrix.get(m, n));
-					}
-				}
-				
 				funVal[i] = objValSol;
 				fitness[i] = fitnessSol;
 			} else {
-				/*
-				 * if the solution i can not be improved, increase its trial
-				 * counter
-				 */
 				trial[i] = trial[i] + 1;
 			}
 		}
@@ -551,7 +534,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 			for(Future<Boolean> task : results){
 				task.get();
 			}
-			print();
+//			print();
 		}catch(Exception e){
 			e.printStackTrace();
 		}
@@ -575,67 +558,42 @@ private class EmployBeeTask implements Callable<Boolean>{
 		private int start;
 		private int end;
 		private int neighbour;
-		private Random rand;
-		public OnlookerBeeTask(int start,int end,int neighbour,Random rand){
+		public OnlookerBeeTask(int start,int end,int neighbour){
 			this.start=start;
 			this.end = end;
 			this.neighbour = neighbour;
-			this.rand = rand;
 		}
 		public Boolean call(){
 			double[] solution = new double[dimension];
 					for (int j = 0; j < dimension; j++){
 						solution[j] = foods[start][j];
 					}
+					double r = rand.nextDouble()-1;
+			
 					double[] bestNeighbor = calculateNeighborBest(start);
 					int minFIndex = Utils.minIndex(funVal);
-					/* v_{ij}=x_{ij}+\phi_{ij}*(x_{kj}-x_{ij}) */
-					
-					double r = rand.nextDouble()-1;
-					solution[end] =  bestNeighbor[end]
-							+ (bestNeighbor[end] - foods[neighbour][end])* r+
+					solution[end] =  bestNeighbor[end] + (bestNeighbor[end] - foods[neighbour][end])* r+
 							rand.nextDouble()*1.5*(foods[minFIndex][end]-bestNeighbor[end]);
-
-					/*
-					 * if generated parameter value is out of boundaries, it is
-					 * shifted onto the boundaries
-					 */
+/*
+					int foodi = rand.nextInt(foodNum);
+					solution[end] = foods[start][end]+ (foods[start][end] - foods[foodi][end]) * r;
+*/
 					if (solution[end] < lb)
 						solution[end] = lb;
 					if (solution[end] > ub)
 						solution[end] = ub;
-					Instances centroids = arrayToInstances(solution);
-					Matrix matrix = updateMemberShip(centroids);
-					double objValSol = calculateObjectiveFunction(centroids, matrix);
+					
+					double objValSol = calculateObjectiveFunction(solution);
 					double fitnessSol = calculateFitness(objValSol);
 
-					/*
-					 * a greedy selection is applied between the current solution i
-					 * and its mutant
-					 */
 					if (fitnessSol > fitness[start]) {
-						/*
-						 * If the mutant solution is better than the current
-						 * solution i, replace the solution with the mutant and
-						 * reset the trial counter of solution i
-						 */
 						trial[start] = 0;
 						for (int j = 0; j < dimension; j++){
 							foods[start][j] = solution[j];
 						}
-							
-						for(int m = 0; m < instances.numInstances();m++){
-							for(int n=0; n < m_NumClusters;n++){
-								matrixs[start].set(m, n, matrix.get(m, n));
-							}
-						}
 						funVal[start] = objValSol;
 						fitness[start] = fitnessSol;
 					} else {
-						/*
-						 * if the solution i can not be improved, increase its trial
-						 * counter
-						 */
 						trial[start] = trial[start] + 1;
 					}
 					return true;
@@ -647,35 +605,20 @@ private class EmployBeeTask implements Callable<Boolean>{
 		int i, j, t;
 		i = 0;
 		t = 0;
-		Random rand = new Random();
 		List<Future<Boolean>> results = new ArrayList<Future<Boolean>>();
 		while (t < foodNum) {
-			double r = Math.random();
-//			r = ((double) Math.random() * 32767 / ((double) (32767) + (double) (1)));
-			/*
-			 * choose a food source depending on its probability to be chosen
-			 */
+			double r = rand.nextDouble();
+
 			if (r < prob[i]) {
 				t++;
 
-				/* The parameter to be changed is determined randomly */
 				int dj = rand.nextInt(dimension);
 
-				/*
-				 * A randomly chosen solution is used in producing a mutant
-				 * solution of the solution i
-				 */
 				int neighbour = rand.nextInt(foodNum);
-
-				/*
-				 * Randomly selected solution must be different from the
-				 * solution i
-				 */
 				while (neighbour == i) {
-					// System.out.println(Math.random()*32767+"  "+32767);
 					neighbour = rand.nextInt(foodNum);
 				}
-				results.add(m_executorPool.submit(new OnlookerBeeTask( i, dj,neighbour,rand)));
+				results.add(m_executorPool.submit(new OnlookerBeeTask( i, dj,neighbour)));
 			}
 			i++;
 			if (i == foodNum)
@@ -685,7 +628,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 			for(Future<Boolean> task : results){
 				task.get();
 			}
-			print();
+//			print();
 		}catch(Exception e){
 			e.printStackTrace();
 		}
@@ -717,6 +660,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 		}
 		return result;
 	}
+/*	
 	private class CalFcmTask implements Callable<Boolean>{
 		private int start;
 		private int end;
@@ -731,24 +675,14 @@ private class EmployBeeTask implements Callable<Boolean>{
 				for (int u = 0; u < dimension; u++){
 					solution[u] = foods[i][u];
 				}
-				Instances centroids = arrayToInstances(solution);
-				Matrix matrix = updateMemberShip(centroids);
-				centroids = updateCentroid(matrix);
-				matrix = updateMemberShip(centroids);
-				double objValSol = calculateObjectiveFunction(centroids, matrix);
+				
+				double objValSol = calculateObjectiveFunction(solution);
 				double fitnessSol = calculateFitness(objValSol);
 
-				/*
-				 * a greedy selection is applied between the current solution i and
-				 * its mutant
-				 */
+				
 				if (fitnessSol > fitness[i]) {
 
-					/**
-					 * If the mutant solution is better than the current solution i,
-					 * replace the solution with the mutant and reset the trial
-					 * counter of solution i
-					 * */
+					
 					trial[i] = 0;
 					double[] newSolution = instancesToArray(centroids);
 					for (int j = 0; j < dimension; j++){
@@ -763,10 +697,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 					funVal[i] = objValSol;
 					fitness[i] = fitnessSol;
 				} else {
-					/*
-					 * if the solution i can not be improved, increase its trial
-					 * counter
-					 */
+					
 					trial[i] = trial[i] + 1;
 				}
 			}
@@ -788,11 +719,12 @@ private class EmployBeeTask implements Callable<Boolean>{
 			for(Future<Boolean> task : results){
 				task.get();
 			}
-			print();
+//			print();
 		}catch(Exception e){
 			e.printStackTrace();
 		}
 	}
+*/	
 	public double[] instancesToArray(Instances centroids) {
 		
 		double[] value = new double[dimension];
@@ -864,9 +796,30 @@ private class EmployBeeTask implements Callable<Boolean>{
 		m_ClusterMissingCounts = new double[m_NumClusters][instances
 				.numAttributes()];
 	}
-
-	public Instances updateCentroid(Matrix matrix) {
-		Instances centroids = new Instances(instances,0);
+	
+	public double calculateObjectiveFunction(double[] solution){
+		
+		Instances centroids = arrayToInstances(solution);
+		Matrix matrix = new Matrix(instances.numInstances(), m_NumClusters);
+		for(int i=0; i<maxIteration; i++){
+			matrix = updateMemberShip(centroids,matrix);
+			centroids = updateCentroid(centroids,matrix);
+		}
+		double objValSol = calculateFunction(centroids, matrix);
+		return objValSol;
+	}
+	public void lastInitCentroids(double[] solution){
+		
+		m_ClusterCentroids = arrayToInstances(solution);
+		
+		for(int i=0; i<maxIteration; i++){
+			bestMS = updateMemberShip(m_ClusterCentroids,bestMS);
+			m_ClusterCentroids = updateCentroid(m_ClusterCentroids,bestMS);
+		}
+	}
+	
+	public Instances updateCentroid(Instances centroids, Matrix matrix) {
+		
 		for (int k = 0; k < m_NumClusters; k++) {
 			double bottom = 0.0d;
 			double[] attributes = new double[instances.numAttributes()];
@@ -884,13 +837,13 @@ private class EmployBeeTask implements Callable<Boolean>{
 				double attValue = in.value(m);
 				in.setValue(m, attValue / bottom);
 			}
-			centroids.add(in);
+			centroids.set(k, in);
 		}
 		return centroids;
 	}
 
-	public Matrix updateMemberShip(Instances centroids) {
-		Matrix matrix = new Matrix(instances.numInstances(), m_NumClusters);
+	public Matrix updateMemberShip(Instances centroids,Matrix matrix) {
+		
 		for (int j = 0; j < m_NumClusters; j++) {
 			for (int i = 0; i < instances.numInstances(); i++) {
 				double bottom = 0;
@@ -908,7 +861,7 @@ private class EmployBeeTask implements Callable<Boolean>{
 		return matrix;
 	}
 
-	public double calculateObjectiveFunction(Instances centroids,Matrix matrix) {
+	public double calculateFunction(Instances centroids,Matrix matrix) {
 		double sum = 0, dist = 0;
 		for (int i = 0; i < instances.numInstances(); i++) {
 			for (int j = 0; j < m_NumClusters; j++) {
@@ -1306,6 +1259,10 @@ private class EmployBeeTask implements Callable<Boolean>{
 
 	public Instances[] getClusters(){
 		return mClusters;
+	}
+	public void setSeed(int seed){
+		m_Seed = seed;
+		rand.setSeed(seed);
 	}
 	@Override
 	public void setOptions(String[] options) throws Exception {
@@ -1713,10 +1670,5 @@ private class EmployBeeTask implements Callable<Boolean>{
 
 		temp.append("\n\n");
 		return temp.toString();
-	}
-
-	public static void main(String[] args) {
-		// TODO Auto-generated method stub
-		runClusterer(new ABCSimpleFCM(), args);
 	}
 }
