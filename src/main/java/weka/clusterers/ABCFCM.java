@@ -275,14 +275,6 @@ public class ABCFCM extends RandomizableClusterer implements
 				sendScoutBees();
 				System.out.println("iter="+iter+" minObjFunValue="+minObjFunValue);
 			}
-/*			
-			Instances ins = arrayToInstances(bestFood);
-			for(int i=0; i < maxCycle; i++){
-				bestMS = updateMemberShip(ins);
-				m_ClusterCentroids = updateCentroid(bestMS);
-				System.out.println("fcm iter="+i);
-			}
-*/		
 			updateClustersInfo();
 			System.out.println("minObjFunValue = "+ minObjFunValue);
 			System.out.println(toString());
